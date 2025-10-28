@@ -8,6 +8,7 @@
 //Setting to the same pin for raspberry pi pico onboard led
 //but will change for the PCB board
 #define LED_CONNECTED_PIN 25
+#define LED_ENABLE_BLINK_PIN 2 
 
 typedef enum
 {

@@ -1,0 +1,6 @@
+
+.program capture_prog
+.wrap_target
+    mov isr, pins   ; 1 cycle:  move data from GPIO pins
+    ;push            ; 1 cycle: Push 32 bits from ISR to RX FIFO
+.wrap

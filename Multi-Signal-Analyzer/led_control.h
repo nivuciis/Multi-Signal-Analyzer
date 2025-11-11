@@ -3,8 +3,6 @@
 
 #include "pico/stdlib.h"
 
-//Defines Gpios for the LED pins
-
 //Setting to the same pin for raspberry pi pico onboard led
 //but will change for the PCB board
 #define LED_CONNECTED_PIN 25
@@ -20,13 +18,11 @@ typedef enum
 
 /**
  * @brief Initialize the LED control system.
- * Initiate with all leds ON
- * 
  */
 void led_init(void);
 
 /**
- * @brief 
+ * @brief changes the led status 
  *
  * @param new_status 
  */

@@ -38,7 +38,9 @@ pico_sdk_init()
 add_executable(Multi_Signal_Analyzer 
             Multi_Signal_Analyzer.c 
             led_control.c
-            capture_data.c)
+            capture_data.c
+            usb_descriptors.c
+            )
 
 
 pico_set_program_name(Multi_Signal_Analyzer "Multi_Signal_Analyzer")
@@ -57,11 +59,12 @@ target_link_libraries(Multi_Signal_Analyzer
         hardware_dma
         hardware_pio
         pico_stdlib
-        pico_stdio_usb
+        tinyusb_device
+        tinyusb_board
         )
 
 #Enables USB output
-pico_enable_stdio_usb(Multi_Signal_Analyzer 1)  
+pico_enable_stdio_usb(Multi_Signal_Analyzer 0)  
 # Add the standard include files to the build
 target_include_directories(Multi_Signal_Analyzer PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}

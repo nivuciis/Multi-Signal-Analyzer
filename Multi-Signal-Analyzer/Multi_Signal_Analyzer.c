@@ -7,15 +7,15 @@
 #include "tusb.h"
 #include <bsp/board_api.h>
 
-uint32_t sample_rate = 10000000; 
-uint32_t sample_count = 1024;
+uint32_t sample_rate = 15000000; 
+uint32_t sample_count = 2048*4;
 uint16_t  digital_channels_mask = 0x1FFF; 
 uint8_t  analog_channels_mask = 0x03; 
 
 #ifdef ANA_LOGIC_ANALYZER
-#define DIGITAL_START_PIN 8
+#define DIGITAL_START_PIN 9
 #else
-#define DIGITAL_START_PIN 8
+#define DIGITAL_START_PIN 0
 #endif 
 
 /*
@@ -72,9 +72,12 @@ void tud_cdc_rx_cb(uint8_t itf)
             tud_cdc_write_str("Multi-Signal-Analyzer v1.0\r\n");
             break;
 
-        case 0x10: 
+        case 0x10:  
             tud_cdc_write_str("Capture started\r\n");
-            break;
+            tud_cdc_write_flush();
+            led_set_status(LED_STATUS_CAPTURING);
+            capture_arm_and_send(sample_count, sample_rate);
+            return;
 
         case 0x11:
             if(count < 3) {
@@ -91,7 +94,10 @@ void tud_cdc_rx_cb(uint8_t itf)
         case 0x12:
             tud_cdc_write_str("Set Triggers command received\r\n");
             break;
-
+        //Set sample rate
+        case 0x13:
+            tud_cdc_write_str("Set Sample Rate command received\r\n");
+            break;
         default:
             tud_cdc_write_str("ERR: Unknown Command\r\n");
             break;

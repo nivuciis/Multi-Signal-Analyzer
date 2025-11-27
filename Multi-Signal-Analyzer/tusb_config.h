@@ -27,9 +27,9 @@ extern "C" {
 #define CFG_TUD_CDC              1
 
 // Buffer sizes (Bulk transfers are usually 64 bytes on USB FS)
-#define CFG_TUD_CDC_RX_BUFSIZE   64
-#define CFG_TUD_CDC_TX_BUFSIZE   64
-#define CFG_TUD_CDC_EP_BUFSIZE   64
+#define CFG_TUD_CDC_RX_BUFSIZE   8192*4
+#define CFG_TUD_CDC_TX_BUFSIZE   8192*4
+#define CFG_TUD_CDC_EP_BUFSIZE   8192*4
 
 #ifndef CFG_TUD_ENDPOINT0_SIZE
 #define CFG_TUD_ENDPOINT0_SIZE    64

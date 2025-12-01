@@ -36,7 +36,7 @@ pico_sdk_init()
 # Add executable. Default name is the project name, version 0.1
 
 add_executable(Multi_Signal_Analyzer 
-            Multi_Signal_Analyzer.c 
+            multi_signal_analyzer.c 
             led_control.c
             capture_data.c
             usb_descriptors.c

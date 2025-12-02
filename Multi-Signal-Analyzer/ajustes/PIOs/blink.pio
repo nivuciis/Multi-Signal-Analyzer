@@ -1,0 +1,62 @@
+; MODIFIED: This program blinks an LED only while an enable pin is high.
+;
+; - 'set' pins should be mapped to your LED GPIO.
+; - 'in' pins should be mapped to your 'is_capturing' enable GPIO.
+
+.program blink_gated
+    pull block      ; Get the delay value from TX FIFO
+    out y, 32       ; Store delay value in Y scratch register
+
+loop_start:
+    ; Check the enable pin
+    mov isr, null   ; Clear the Input Shift Register
+    in pins, 1      ; Read 1 bit from the 'in_base' (enable_pin) into the ISR
+    mov x, isr      ; Copy ISR (which is now 0 or 1) into X
+    jmp !x led_off  ; If X is 0 (pin is low), jump to the 'led_off' handler
+
+; --- Blink Logic (runs if pin is high) ---
+    mov x, y        ; Load delay count
+    set pins, 1     ; Turn LED on
+lp1:
+    jmp x-- lp1     ; Delay
+    mov x, y        ; Load delay count
+    set pins, 0     ; Turn LED off
+lp2:
+    jmp x-- lp2     ; Delay
+    jmp loop_start ; Loop back to check the enable pin again
+
+; --- Off State (runs if pin is low) ---
+led_off:
+    set pins, 0     ; Ensure LED is off
+    jmp loop_start ; Loop back to check the enable pin again
+
+.wrap
+
+% c-sdk {
+// Helper function to set up the GPIOs and configure the SM.
+// - led_pin: The GPIO pin for the blinking LED (output).
+// - enable_pin: The GPIO pin to read 'is_capturing' from (input).
+
+void blink_gated_program_init(PIO pio, uint sm, uint offset, uint led_pin, uint enable_pin) {
+    
+    // Configure the LED pin as an output
+    pio_gpio_init(pio, led_pin);
+    pio_sm_set_consecutive_pindirs(pio, sm, led_pin, 1, true);
+
+    // Configure the enable pin as an input
+    pio_gpio_init(pio, enable_pin);
+    pio_sm_set_consecutive_pindirs(pio, sm, enable_pin, 1, false); // false = input
+
+    // Get default config and apply settings
+    pio_sm_config c = blink_gated_program_get_default_config(offset);
+    
+    // Map the 'set' instructions to the LED pin
+    sm_config_set_set_pins(&c, led_pin, 1);
+
+    // Map the 'in' instructions to the enable pin
+    sm_config_set_in_pins(&c, enable_pin);
+
+    // Load and start the SM
+    pio_sm_init(pio, sm, offset, &c);
+}
+%}

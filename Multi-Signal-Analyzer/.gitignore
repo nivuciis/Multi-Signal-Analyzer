@@ -1,2 +1,67 @@
-build
-!.vscode/*
+# Build artifacts
+/build/
+
+# CMake / Make
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+Makefile.cmake
+compile_commands.json
+
+# Compiled / linked binaries
+*.elf
+*.uf2
+*.dis
+*.map
+*.hex
+*.bin
+*.o
+*.obj
+*.a
+*.lib
+*.so
+
+# VS Code - ignore everything but keep common workspace files (unignore below)
+.vscode/*
+!.vscode/launch.json
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# JetBrains
+.idea/
+*.iml
+
+# Python
+venv/
+ENV/
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor temp files
+*~
+*.swp
+*.tmp
+
+# Logs
+*.log
+
+# Other tool / SDK folders
+pico_sdk/
+.pio/
+
+# Ignore coverage and other artifacts
+coverage.xml
+htmlcov/
+
+bin/
+include/
+lib/
+lib64/

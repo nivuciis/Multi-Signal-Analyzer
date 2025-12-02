@@ -1,0 +1,4 @@
+.program capture_prog
+.wrap_target
+    in pins, 32      ; 1 cycle:  read 32 bits from GPIO pins into ISR
+.wrap

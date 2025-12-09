@@ -2,9 +2,9 @@
  * @file tusb_config.h
  * @brief TinyUSB configuration file
  *
- * @author    Vinicius Rafael Marques de Carvalho vinicius.carvalho@edge.ufal.br
+ * @author    Vinicius Rafael Marques de Carvalho <vinicius.carvalho@edge.ufal.br>
  * @version   v1.0
- * @date      28/11/2025
+ * @date      05/12/2025
  * @copyright
  *  ------------------------------------------------------------*/
 
@@ -15,31 +15,63 @@
 extern "C" {
 #endif
 
-// --------------------------------------------------------------------+
-// CONTROLLER CONFIGURATION
-// --------------------------------------------------------------------+
-#define CFG_TUSB_MCU OPT_MCU_RP2040 // RP2350 uses the same USB IP as RP2040
+/**
+ * @brief Defines the USB IP for TinyUSB device stack  
+ * 
+ * @note RP2350 uses the same USB IP as RP2040
+ *
+ */
+#define CFG_TUSB_MCU OPT_MCU_RP2040
 
-// --------------------------------------------------------------------+
-// DEVICE CONFIGURATION
-// --------------------------------------------------------------------+
+/**
+ * @brief Enables TinyUSB device stack.
+ *
+ */
 #define CFG_TUD_ENABLED 1
 
+/**
+ * @brief Set the USB as device or host.
+ *
+ */
 #define CFG_TUSB_RHPORT0_MODE (OPT_MODE_DEVICE | OPT_MODE_FULL_SPEED)
+
+/**
+ * @brief Set the USB port (default = 0).
+ *
+ */
 #ifndef BOARD_TUD_RHPORT
 #define BOARD_TUD_RHPORT 0
 #endif
 
-// Enable the Vendor Class
-#define CFG_TUD_VENDOR 1
+/**
+ * @brief Number of USB Vendor Class to enable.
+ *
+ */
+#define CFG_TUD_VENDOR 0
 
+/**
+ * @brief Number of CDC (Serial) interfaces to enable.
+ *
+ */
 #define CFG_TUD_CDC 1
 
-// Buffer sizes (Bulk transfers are usually 64 bytes on USB FS)
-#define CFG_TUD_CDC_RX_BUFSIZE 8192 * 4
-#define CFG_TUD_CDC_TX_BUFSIZE 8192 * 4
-#define CFG_TUD_CDC_EP_BUFSIZE 8192 * 4
+/**
+ * @brief CDC FIFO buffer size configuration.
+ * Defines the size of the ring buffers used for serial data transfer.
+ *
+ * @note The value (8192 * 4) results in a 32KB buffer, ensuring high throughput
+ * but consuming significant RAM.
+ */
+#define CFG_TUD_CDC_RX_BUFSIZE (8192 * 4) /**< Host to Device */
+#define CFG_TUD_CDC_TX_BUFSIZE (8192 * 4) /**< Device to Host */
+#define CFG_TUD_CDC_EP_BUFSIZE (8192 * 4) /**< Endpoint limit*/
 
+/**
+ * @brief Max packet size for Endpoint 0 (Control Endpoint).
+ *
+ * @note Used for USB enumeration and control transfers.
+ * @note Standard size for Full/High Speed is 64 bytes.
+ */
 #ifndef CFG_TUD_ENDPOINT0_SIZE
 #define CFG_TUD_ENDPOINT0_SIZE 64
 #endif

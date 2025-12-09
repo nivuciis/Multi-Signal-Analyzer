@@ -1,28 +1,29 @@
 /** -------------------------------------------------------------
  * @file multi_signal_analyzer.c
- * @brief Main application file for Multi-Signal Analyzer
+ * @brief Main application that handles USB data reception and data acquisition configuration.
  *
- * @author    Vinicius Rafael Marques de Carvalho vinicius.carvalho@edge.ufal.br
+ * @author    Vinicius Rafael Marques de Carvalho <vinicius.carvalho@edge.ufal.br>
  * @version   v1.0
- * @date      28/11/2025
+ * @date      05/12/2025
  * @copyright
  *  ------------------------------------------------------------*/
 
 #include "capture_data.h"
-#include "hardware/dma.h"
-#include "hardware/pio.h"
 #include "led_control.h"
-#include "pico/stdlib.h"
-#include "tusb.h"
 
 #include <stdio.h>
 
 #include <bsp/board_api.h>
+#include <hardware/dma.h>
+#include <hardware/pio.h>
+#include <pico/stdlib.h>
+#include <tusb.h>
 
 static uint32_t sample_rate = 15000000;
 static uint32_t sample_count = 2048 * 4;
 static uint16_t digital_channels_mask = 0x1FFF;
 static uint8_t analog_channels_mask = 0x03;
+static uint32_t capture_buffer[CAPTURE_BUFFER_SIZE];
 
 static uint8_t new_analog_mask;
 static uint16_t new_digital_mask;
@@ -36,6 +37,7 @@ static uint16_t combined_config;
 
 /**
  * @brief Set pins base on masks received from host
+ *
  * @param dig_mask: 12 bits (ex: bit 0 = GPIO 8)
  * @param ana_mask: 3 bits
  */
@@ -49,11 +51,12 @@ void configure_pins_from_mask(uint16_t dig_mask, uint8_t ana_mask)
 		if (dig_mask & (1 << i)) {
 			gpio_init(pin);
 			gpio_set_dir(pin, GPIO_IN);
-			gpio_set_pulls(pin, true, false); 
+			gpio_set_pulls(pin, true, false);
 		} else {
 			gpio_deinit(pin);
 		}
 	}
+
 	digital_channels_mask = dig_mask << DIGITAL_START_PIN;
 	analog_channels_mask = ana_mask;
 }
@@ -61,7 +64,7 @@ void configure_pins_from_mask(uint16_t dig_mask, uint8_t ana_mask)
 /**
  * @brief Process the received data from USB
  *
- * @param cmd byte
+ * @param itf byte
  */
 
 void tud_cdc_rx_cb(uint8_t itf)
@@ -84,8 +87,9 @@ void tud_cdc_rx_cb(uint8_t itf)
 	case 0x10:
 		tud_cdc_write_str("Capture started\r\n");
 		tud_cdc_write_flush();
-		led_set_status(LED_STATUS_CAPTURING);
-		capture_data(sample_count, sample_rate);
+		set_led_status(LED_STATUS_READY_TO_CAPTURE);
+		capture_data(sample_count, sample_rate, capture_buffer);
+		send_captured_data(capture_buffer, sample_rate);
 		break;
 
 	case 0x11:
@@ -93,6 +97,7 @@ void tud_cdc_rx_cb(uint8_t itf)
 			tud_cdc_write_str("ERR: Invalid Set Channel command\r\n");
 			break;
 		}
+
 		combined_config = (buf[2] << 8) | buf[1];
 		new_analog_mask = combined_config & 0x07;
 		new_digital_mask = (combined_config >> 3) & 0x0FFF;
@@ -116,18 +121,19 @@ void tud_cdc_rx_cb(uint8_t itf)
 
 int main()
 {
-	led_init();
+	init_led();
 	board_init();
 	capture_init();
 	tusb_init();
 	sleep_ms(1000);
 
 	while (!tud_cdc_connected()) {
-			led_set_status(LED_STATUS_ERROR);
-			tud_task(); 
-		}
+		set_led_status(LED_STATUS_ERROR);
+		tud_task();
+	}
+
 	while (true) {
 		tud_task();
-		led_set_status(LED_STATUS_CONNECTED);
+		set_led_status(LED_STATUS_CONNECTED);
 	}
 }

@@ -2,18 +2,15 @@
  * @file capture.pio
  * @brief PIO program for capturing digital signals from GPIO pins 
  *
- * @author    Vinicius Rafael Marques de Carvalho vinicius.carvalho@edge.ufal.br
+ * @author    Vinicius Rafael Marques de Carvalho <vinicius.carvalho@edge.ufal.br>
  * @version   v1.0
- * @date      28/11/2025
+ * @date      05/12/2025
  * @copyright 
  *  ------------------------------------------------------------*/
 
 .program capture_prog
 
 .wrap_target
-    ; Captura os 12 pinos (GPIO 0 ao 11)
     in pins, 12
-    
-    ; Preenche os 20 bits restantes com zeros para completar 32 bits
     in null, 20
 .wrap

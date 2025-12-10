@@ -28,43 +28,50 @@ set(PICO_BOARD pico2 CACHE STRING "Board type")
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
 
-project(Multi-Signal-Analyzer C CXX ASM)
+project(multi_signal_analyzer C CXX ASM)
 
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(Multi-Signal-Analyzer 
-            Multi-Signal-Analyzer.c 
-            led_control.c)
+add_executable(multi_signal_analyzer 
+            multi_signal_analyzer.c 
+            led_control.c
+            capture_data.c
+            usb_descriptors.c
+            )
 
-pico_set_program_name(Multi-Signal-Analyzer "Multi-Signal-Analyzer")
-pico_set_program_version(Multi-Signal-Analyzer "0.1")
+
+pico_set_program_name(multi_signal_analyzer "multi_signal_analyzer")
+pico_set_program_version(multi_signal_analyzer "1.0")   
+
 
 # Generate PIO header
-pico_generate_pio_header(Multi-Signal-Analyzer ${CMAKE_CURRENT_LIST_DIR}/blink.pio)
+pico_generate_pio_header(multi_signal_analyzer 
+                        ${CMAKE_CURRENT_LIST_DIR}/blink.pio
+                        ${CMAKE_CURRENT_LIST_DIR}/capture.pio)
 
 # Modify the below lines to enable/disable output over UART/USB
-pico_enable_stdio_uart(Multi-Signal-Analyzer 0)
-pico_enable_stdio_usb(Multi-Signal-Analyzer 0)
+pico_enable_stdio_uart(multi_signal_analyzer 0)
 
-target_link_libraries(Multi-Signal-Analyzer 
+target_link_libraries(multi_signal_analyzer 
         hardware_dma
         hardware_pio
         pico_stdlib
-        pico_stdio_usb
+        tinyusb_device
+        tinyusb_board
         )
 
 #Enables USB output
-pico_enable_stdio_usb(Multi-Signal-Analyzer 1)  
+pico_enable_stdio_usb(multi_signal_analyzer 0)  
 # Add the standard include files to the build
-target_include_directories(Multi-Signal-Analyzer PRIVATE
+target_include_directories(multi_signal_analyzer PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
 )
 
 # Add any user requested libraries
 
 
-pico_add_extra_outputs(Multi-Signal-Analyzer)
+pico_add_extra_outputs(multi_signal_analyzer)
 

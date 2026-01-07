@@ -13,7 +13,16 @@
 #ifndef LED_H
 #define LED_H
 
-#define LED_GPIO_PIN  25
+/**
+* @brief GPIO pin for USB connected detection
+ * 
+ */
+#define LED_USB_PIN  25
+
+/**
+ * @brief GPIO pin to indicate capturing mode
+ * 
+ */
 #define LED_BLINK_PIN 2
 
 /**

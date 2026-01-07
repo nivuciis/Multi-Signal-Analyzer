@@ -1,4 +1,4 @@
- /*******************************************************************
+/*******************************************************************
  * @file main.c
  *
  * @brief Main file for the workstation manager application.
@@ -10,31 +10,28 @@
  *
  *******************************************************************/
 
- #include <pico/stdio_usb.h>
- #include <pico/time.h>
+#include "led.h"
 
- #include "led.h"
+#include <pico/stdio_usb.h>
+#include <pico/time.h>
 
- static bool is_usb_connected = false;
+static bool is_usb_connected = false;
 
- static void sync_led_with_usb_connection() {
-    while (!stdio_usb_connected()) {
-        ana_led_set_status(LED_STATUS_OFF);
-        is_usb_connected = false;
-        sleep_ms(10);
-        return;
-    }
-    ana_led_set_status(LED_STATUS_CONNECTED);
-    is_usb_connected = true;
+static void sync_led_with_usb_connection()
+{
+    is_usb_connected = stdio_usb_connected();
+    ana_led_set_status((is_usb_connected) ? LED_STATUS_CONNECTED : LED_STATUS_OFF);
 }
 
-int main(){
-    stdio_init_all();
-    ana_led_init();
+int main()
+{
+	stdio_init_all();
+	ana_led_init();
 
-    while (1) {
-        sync_led_with_usb_connection();
-    }
+	while (1) {
+		sync_led_with_usb_connection();
+        sleep_ms(30);
+	}
 
-    return 0;
+	return 0;
 }

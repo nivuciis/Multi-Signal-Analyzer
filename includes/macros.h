@@ -26,6 +26,7 @@
  * @param val Value to check.
  * @param min Minimum allowed value.
  * @param max Maximum allowed value.
+ * @param str Error message to print if the value is out of range.
  */
 #define CHECK_RANGE(val, min, max, str)                                                            \
 	do {                                                                                       \

@@ -67,9 +67,10 @@ pico_generate_pio_header(multi_signal_analyzer
 pico_enable_stdio_uart(multi_signal_analyzer 0)
 
 target_link_libraries(multi_signal_analyzer 
-        hardware_dma
-        hardware_pio
-        pico_stdlib
+            hardware_dma
+            hardware_pio
+            pico_stdlib
+            pico_stdio_usb
         )
 
 #Enables USB output

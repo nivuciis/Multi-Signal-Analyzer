@@ -33,24 +33,35 @@ project(multi_signal_analyzer C CXX ASM)
 # Initialise the Raspberry Pi Pico SDK
 pico_sdk_init()
 
+set(SOURCE_DIRS ${CMAKE_CURRENT_LIST_DIR}/src)
+set(INCLUDE_DIRS ${CMAKE_CURRENT_LIST_DIR}/includes)
+set(PIO_DIRS ${CMAKE_CURRENT_LIST_DIR}/pio)
+
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(multi_signal_analyzer 
-            multi_signal_analyzer.c 
-            led_control.c
-            capture_data.c
-            usb_descriptors.c
-            )
+file(GLOB_RECURSE SOURCE_FILES
+            ${SOURCE_DIRS}/*.c
+        )
 
+add_executable(multi_signal_analyzer
+            ${SOURCE_FILES}
+        )
+
+include_directories(multi_signal_analyzer
+            ${INCLUDE_DIRS}
+        )
 
 pico_set_program_name(multi_signal_analyzer "multi_signal_analyzer")
 pico_set_program_version(multi_signal_analyzer "1.0")   
 
-
 # Generate PIO header
+file(GLOB_RECURSE PIO_FILES
+            ${PIO_DIRS}/*.pio
+        )
+
 pico_generate_pio_header(multi_signal_analyzer 
-                        ${CMAKE_CURRENT_LIST_DIR}/blink.pio
-                        ${CMAKE_CURRENT_LIST_DIR}/capture.pio)
+            ${PIO_FILES}
+        )
 
 # Modify the below lines to enable/disable output over UART/USB
 pico_enable_stdio_uart(multi_signal_analyzer 0)
@@ -59,8 +70,6 @@ target_link_libraries(multi_signal_analyzer
         hardware_dma
         hardware_pio
         pico_stdlib
-        tinyusb_device
-        tinyusb_board
         )
 
 #Enables USB output

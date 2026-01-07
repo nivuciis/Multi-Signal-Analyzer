@@ -43,10 +43,6 @@ file(GLOB_RECURSE SOURCE_FILES
             ${SOURCE_DIRS}/*.c
         )
 
-file(GLOB_RECURSE HEADER_FILES
-            ${INCLUDE_DIRS}/*.h
-        )
-
 add_executable(multi_signal_analyzer
             ${SOURCE_FILES}
         )

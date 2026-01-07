@@ -1,7 +1,7 @@
 /*******************************************************************
  * @file led.c
  *
- * @brief
+ * @brief Led control commands
  * @author João Matheus Nascimento Dias (joao.dias@edge.ufal.br)
  * @version 0.1
  * @date 07/01/2026
@@ -9,13 +9,14 @@
  * @copyright Copyright (c) 2025
  *
  *******************************************************************/
-#include "blink.pio.h"
-#include "hardware/gpio.h"
-#include "hardware/pio.h"
-#include "led.h"
-#include "macros.h"
+ #include <hardware/gpio.h>
+ #include <hardware/pio.h>
+ #include <stdio.h>
 
-#include <stdio.h>
+ #include "led.h"
+ #include "macros.h"
+ #include "blink.pio.h"
+
 
 #define MSG_INVALID_STATUS "Invalid LED status!\n"
 

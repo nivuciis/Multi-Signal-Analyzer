@@ -1,3 +1,15 @@
+;/*******************************************************************
+; * @file bring_up.pio
+; *
+; * @brief The asm code to bring up the GPIO reading PIO program.
+; * @author João Matheus Nascimento Dias (joao.dias@edge.ufal.br)
+; * @version 0.1
+; * @date 08/01/2026
+; *
+; * @copyright Copyright (c) 2025
+; *
+; *******************************************************************/
+
 .program bring_up
     pull            ; Get the value of the GPIO pin is to read
     out y, 32       ; Store pin number in Y scratch register

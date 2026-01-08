@@ -12,6 +12,16 @@
 #ifndef RS232_H
 #define RS232_H
 
+#include <stdint.h>
+
+#include <pico/types.h>
+#include <hardware/gpio.h>
+#include <hardware/pio.h>
+
+static PIO pio_rs232 = pio2;
+static uint sm_rs232 = 1;
+static uint pio_rs232_offset;
+static int dma_rs232_chan;
 
 
 /**

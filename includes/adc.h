@@ -14,6 +14,15 @@
 
 #include <stdint.h>
 
+#include <pico/types.h>
+#include <hardware/gpio.h>
+#include <hardware/pio.h>
+
+static PIO pio_adc = pio1;
+static uint sm_adc = 2;
+static uint pio_adc_offset;
+static int dma_adc_chan;
+
 /**
  * @brief Number of ADC channels
  * 

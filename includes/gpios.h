@@ -1,5 +1,5 @@
 /*******************************************************************
- * @file can.h
+ * @file gpios.h
  *
  * @brief Led control commands
  * @author João Matheus Nascimento Dias (joao.dias@edge.ufal.br)
@@ -9,8 +9,8 @@
  * @copyright Copyright (c) 2025
  *
  *******************************************************************/
-#ifndef CAN_H
-#define CAN_H
+#ifndef GPIOS_H
+#define GPIOS_H
 
 #include <stdint.h>
 
@@ -18,22 +18,27 @@
 #include <hardware/gpio.h>
 #include <hardware/pio.h>
 
-static PIO pio_can = pio1;
-static uint sm_can = 1;
-static uint pio_can_offset;
-static int dma_can_chan;
-
-
-/**
- * @brief GPIO pin for CAN
- * 
- */
-#define CAN_GPIO_PIN 35
+static PIO pio_gpios = pio0;
+static uint sm_gpios = 1;
+static uint pio_gpios_offset;
+static int dma_gpios_chan;
 
 /**
- * @brief Initialize the CAN system.
+ * @brief Number of GPIO pins used.
  * 
  */
-void ana_can_init(void);
+#define GPIOS_NUM_PINS 12
 
-#endif /* CAN_H */
+/**
+ * @brief Starting GPIO pin number.
+ * 
+ */
+#define GPIOS_START_PIN 9
+
+/**
+ * @brief Initialize the GPIOs system.
+ * 
+ */
+void ana_gpios_init(void);
+
+#endif /* GPIOS_H */

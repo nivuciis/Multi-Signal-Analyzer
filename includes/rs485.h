@@ -12,6 +12,17 @@
 #ifndef RS485_H
 #define RS485_H
 
+#include <stdint.h>
+
+#include <pico/types.h>
+#include <hardware/gpio.h>
+#include <hardware/pio.h>
+
+static PIO pio_rs485 = pio2;
+static uint sm_rs485 = 2;
+static uint pio_rs485_offset;
+static int dma_rs485_chan;
+
 /**
  * @brief GPIO pin for RS485 RX
  * 

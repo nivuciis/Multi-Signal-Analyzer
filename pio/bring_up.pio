@@ -1,1 +1,24 @@
-; Create a PIO program to bring up multiple signals for analysis
+.program bring_up
+    pull            ; Get the value of the GPIO pin is to read
+    out y, 32       ; Store pin number in Y scratch register
+    
+    pull            ; Get the number of timer is to read
+    mov x, osr      ; Store timer number in X scratch register
+
+.wrap_target
+    in pins, y      ; Read the first sample from the GPIO pin into the ISR
+    jmp x--, LOOP   ; Loop back to read the GPIO pin again
+    irq 0           ; Trigger IRQ 0. notify the system the progrem has read
+    jmp LOCK        ; Lock the program here
+.wrap
+
+LOOP:
+    in pins, y       ; Read the all 'y' GPIO pin into the ISR
+    jmp x--, LOOP    ; Loop back to read the GPIO pin again
+    irq 0            ; Trigger IRQ 0. notify the system the progrem has read the pin
+LOCK:
+    jmp LOCK         ; Lock the program here'
+
+% c-sdk {
+
+%}

@@ -3,6 +3,7 @@
  *
  * @brief Led control commands
  * @author João Matheus Nascimento Dias (joao.dias@edge.ufal.br)
+ * @author Vinicius Rafael Marques de Carvalho (vinicius.carvalho@edge.ufal.br)
  * @version 0.1
  * @date 07/01/2026
  *

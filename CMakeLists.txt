@@ -70,7 +70,8 @@ target_link_libraries(multi_signal_analyzer
             hardware_dma
             hardware_pio
             pico_stdlib
-            pico_stdio_usb
+            tinyusb_device
+            tinyusb_board
         )
 
 #Enables USB output

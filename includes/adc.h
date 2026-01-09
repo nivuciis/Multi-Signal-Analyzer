@@ -54,13 +54,30 @@ static int dma_adc_chan;
 void ana_adc_init(void);
 
 /**
- * @brief Read the values from the ADC channels.
+ * @brief Set the clock divider for the ADC.
  * 
- * @param chan1 Pointer to store the value from channel 1
- * @param chan2 Pointer to store the value from channel 2
- * @param chan3 Pointer to store the value from channel 3
+ * @param clkdiv The clock divider value to set.
  */
-void ana_adc_read_channels(uint16_t* chan1, uint16_t* chan2, uint16_t* chan3);
+void ana_adc_set_clkdiv(float clkdiv);
+
+/**
+ * @brief Read a single ADC channel.
+ * 
+ * @param rsp Pointer to store the ADC reading result.
+ * @param gpio_pin GPIO pin associated with the ADC channel.
+ */
+void read_adc_single_channel(double *rsp, int gpio_pin);
+
+/**
+ * @brief Read multiple ADC channels.
+ * 
+ * @param rsp1 Pointer to store the ADC reading result for channel 1.
+ * @param rsp2 Pointer to store the ADC reading result for channel 2.
+ * @param rsp3 Pointer to store the ADC reading result for channel 3.
+ * @param samples Number of samples to read.
+ */
+void read_adc_multiple_channels(double *rsp1, double *rsp2, double *rsp3, uint16_t samples);
+
 
 
 #endif /* ADC_H */

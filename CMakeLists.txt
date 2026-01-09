@@ -69,6 +69,7 @@ pico_enable_stdio_uart(multi_signal_analyzer 0)
 target_link_libraries(multi_signal_analyzer 
             hardware_dma
             hardware_pio
+            hardware_adc
             pico_stdlib
             pico_stdio_usb
         )

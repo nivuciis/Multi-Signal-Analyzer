@@ -1,7 +1,7 @@
 /*******************************************************************
  * @file gpios.h
  *
- * @brief Led control commands
+ * @brief GPIOS definition and initialization
  * @author João Matheus Nascimento Dias (joao.dias@edge.ufal.br)
  * @version 0.1
  * @date 08/01/2026
@@ -38,7 +38,15 @@ static int dma_gpios_chan;
 /**
  * @brief Initialize the GPIOs system.
  * 
+ * @param dma_buffer Pointer to the DMA buffer for storing GPIO readings.
+ * @param clk_sys System clock frequency in Hz.
  */
-void ana_gpios_init(void);
+void ana_gpios_init(uint16_t *dma_buffer, double clk_sys);
+
+/**
+ * @brief Get data from GPIOs.
+ * 
+ */
+ void ana_gpios_get_data();
 
 #endif /* GPIOS_H */

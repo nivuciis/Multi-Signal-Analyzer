@@ -1,0 +1,31 @@
+; @file bring_up_rs232.pio
+;
+; @brief The asm code to bring up the RS232 reading - PIO program.
+; @author João Matheus Nascimento Dias (joao.dias@edge.ufal.br)
+; @version 0.1
+; @date 12/01/2026
+;
+; @copyright Copyright (c) 2025
+
+.program bring_up_RS232
+    pull                ; Get the number of timer is to read
+    mov x, osr          ; Store timer number in X scratch register
+
+.wrap_target
+    in pins, 2          ; Read the first sample from the GPIO pin into the ISR
+    jmp x--, LOOP       ; Loop back to read the GPIO pin again
+    jmp NOTIFY_SYSTEM   ; Lock the program here
+.wrap
+
+LOOP:
+    in pins, 2          ; Read the all 'y' GPIO pin into the ISR
+    jmp x--, LOOP       ; Loop back to read the GPIO pin again
+    
+NOTIFY_SYSTEM:
+    irq 0               ; Trigger IRQ 0. notify the system the progrem has read the pin
+LOCK:
+    jmp LOCK            ; Lock the program here
+
+% c-sdk {
+
+%}

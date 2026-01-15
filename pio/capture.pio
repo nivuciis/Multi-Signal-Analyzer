@@ -1,0 +1,16 @@
+/** -------------------------------------------------------------
+ * @file capture.pio
+ * @brief PIO program for capturing digital signals from GPIO pins 
+ *
+ * @author    Vinicius Rafael Marques de Carvalho <vinicius.carvalho@edge.ufal.br>
+ * @version   v1.0
+ * @date      15/01/2026
+ * @copyright Copyright (c) 2026
+ *  ------------------------------------------------------------*/
+
+.program capture_prog
+
+.wrap_target
+    in pins, 16
+    in null, 16
+.wrap

@@ -16,11 +16,10 @@
 
 /**
  * @brief Define the length of the capture buffers
- * 
+ *
  */
-#define CAPTURE_DEPTH 4096
+#define CAPTURE_DEPTH       4096
 #define CAPTURE_BUFFER_SIZE (16 * 1024)
-
 
 /**
  * @brief Digital buffer
@@ -29,10 +28,10 @@
 extern uint32_t digital_capture_buffer[CAPTURE_DEPTH];
 
 /**
- * @brief Analog buffer 
+ * @brief Analog buffer
  * @note Captures 3 bytes per sample
  */
-extern uint8_t analog_capture_buffer[CAPTURE_DEPTH*3];
+extern uint8_t analog_capture_buffer[CAPTURE_DEPTH * 3];
 
 /**
  * @brief Initate the PIO and DMA

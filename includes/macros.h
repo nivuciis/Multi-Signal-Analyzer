@@ -40,4 +40,10 @@
 		}                                                                                  \
 	} while (0)
 
+/**
+ * @brief Macro to enable overclocking.
+ *
+ */
+#define ENABLE_OVERCLOCKING false
+
 #endif /* MACROS_H */

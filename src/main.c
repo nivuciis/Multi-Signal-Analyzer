@@ -17,6 +17,10 @@
 #include <pico/time.h>
 #include <tusb.h>
 
+/**
+ * @brief Synchronize LED status with USB connection state
+ *
+ */
 static void sync_led_with_usb_connection()
 {
 	bool is_usb_connected = tud_cdc_connected();

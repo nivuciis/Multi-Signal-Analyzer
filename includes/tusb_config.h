@@ -12,8 +12,6 @@
  *
  *******************************************************************/
 
-
-
 #ifndef _TUSB_CONFIG_H_
 #define _TUSB_CONFIG_H_
 
@@ -22,8 +20,8 @@ extern "C" {
 #endif
 
 /**
- * @brief Defines the USB IP for TinyUSB device stack  
- * 
+ * @brief Defines the USB IP for TinyUSB device stack
+ *
  * @note RP2350 uses the same USB IP as RP2040
  *
  */

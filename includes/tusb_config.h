@@ -3,7 +3,6 @@
  * @file tusb_config.h
  *
  * @brief TinyUSB configuration file
- * @author João Matheus Nascimento Dias (joao.dias@edge.ufal.br)
  * @author Vinicius Rafael Marques de Carvalho (vinicius.carvalho@edge.ufal.br)
  * @version 0.1
  * @date 09/01/2026
@@ -34,13 +33,15 @@ extern "C" {
 #define CFG_TUD_ENABLED 1
 
 /**
- * @brief Set the USB as device or host.
+ * @brief Set the USB as device and Full Speed mode.
  *
  */
 #define CFG_TUSB_RHPORT0_MODE (OPT_MODE_DEVICE | OPT_MODE_FULL_SPEED)
 
 /**
- * @brief Set the USB port (default = 0).
+ * @brief Set the USB port.
+ *
+ * @note Default is port 0.
  *
  */
 #ifndef BOARD_TUD_RHPORT
@@ -60,15 +61,22 @@ extern "C" {
 #define CFG_TUD_CDC 1
 
 /**
- * @brief CDC FIFO buffer size configuration.
- * Defines the size of the ring buffers used for serial data transfer.
+ * @brief Host to Device buffer size.
  *
- * @note The value (8192 * 4) results in a 32KB buffer, ensuring high throughput
- * but consuming significant RAM.
  */
-#define CFG_TUD_CDC_RX_BUFSIZE (8192 * 4) /**< Host to Device */
-#define CFG_TUD_CDC_TX_BUFSIZE (8192 * 4) /**< Device to Host */
-#define CFG_TUD_CDC_EP_BUFSIZE (8192 * 4) /**< Endpoint limit*/
+#define CFG_TUD_CDC_RX_BUFSIZE (8192 * 4)
+
+/**
+ * @brief Device to Host buffer size.
+ *
+ */
+#define CFG_TUD_CDC_TX_BUFSIZE (8192 * 4)
+
+/**
+ * @brief Endpoint buffer size for CDC interfaces.
+ *
+ */
+#define CFG_TUD_CDC_EP_BUFSIZE (8192 * 4)
 
 /**
  * @brief Max packet size for Endpoint 0 (Control Endpoint).

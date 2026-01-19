@@ -7,7 +7,7 @@
  * @version 0.1
  * @date 07/01/2026
  *
- * @copyright Copyright (c) 2025
+ * @copyright Copyright (c) 2026
  *
  *******************************************************************/
 
@@ -24,11 +24,8 @@
 static void sync_led_with_usb_connection()
 {
 	bool is_usb_connected = tud_cdc_connected();
-	if (is_usb_connected) {
-		ana_led_set_status(LED_STATUS_CONNECTED);
-	} else {
-		ana_led_set_status(LED_STATUS_OFF);
-	}
+	is_usb_connected ? ana_led_set_status(LED_STATUS_CONNECTED)
+			 : ana_led_set_status(LED_STATUS_OFF);
 }
 
 int main()

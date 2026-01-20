@@ -24,8 +24,7 @@
 static void sync_led_with_usb_connection()
 {
 	bool is_usb_connected = tud_cdc_connected();
-	is_usb_connected ? ana_led_set_status(LED_STATUS_CONNECTED)
-			 : ana_led_set_status(LED_STATUS_OFF);
+	ana_led_set_status((is_usb_connected) ? LED_STATUS_CONNECTED : LED_STATUS_OFF);
 }
 
 int main()

@@ -3,7 +3,6 @@
  * @brief Capture data module implementation
  *
  * @author    Vinicius Rafael Marques de Carvalho <vinicius.carvalho@edge.ufal.br>
- * @author   João Matheus Nascimento Dias <joao.dias@edge.ufal.br>
  * @version   0.1
  * @date      15/01/2026
  * @copyright  Copyright (c) 2026
@@ -18,6 +17,7 @@
 #include <hardware/clocks.h>
 #include <hardware/dma.h>
 #include <hardware/pio.h>
+#include <tusb.h>
 
 static PIO pio = pio1;
 static uint sm;
@@ -127,8 +127,10 @@ void ana_capture_data(uint32_t sample_count, uint32_t sample_rate_hz, uint32_t *
 
 	dma_start_channel_mask((1u << dma_digital_channel) | (1u << dma_analog_channel));
 
-	dma_channel_wait_for_finish_blocking(dma_digital_channel);
-	dma_channel_wait_for_finish_blocking(dma_analog_channel);
+	while (dma_channel_is_busy(dma_digital_channel) ||
+	       dma_channel_is_busy(dma_analog_channel)) {
+		tud_task();
+	}
 
 	adc_run(false);
 	pio_sm_set_enabled(pio, sm, false);

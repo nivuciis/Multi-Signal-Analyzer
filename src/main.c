@@ -19,15 +19,13 @@
 #include <pico/time.h>
 #include <tusb.h>
 
-static bool is_usb_connected = false;
-
 /**
  * @brief Synchronize LED status with USB connection state
  *
  */
-static void ana_sync_led_with_usb()
+static void sync_led_with_usb_connnection()
 {
-	is_usb_connected = stdio_usb_connected();
+	bool is_usb_connected = tud_cdc_connected();
 	ana_led_set_status((is_usb_connected) ? LED_STATUS_CONNECTED : LED_STATUS_OFF);
 }
 
@@ -39,22 +37,10 @@ static void ana_sync_led_with_usb()
 void tud_cdc_rx_cb(uint8_t msg)
 {
 	(void)msg;
-
-	if (!tud_cdc_available()) {
-		return;
-	}
-
-	char buf[64];
-	uint32_t count = tud_cdc_read(buf, sizeof(buf));
-
-	for (uint32_t i = 0; i < count; i++) {
-		sigrok_process_byte(buf[i]);
-	}
 }
 
 int main()
 {
-
 	ana_led_init();
 	tusb_init();
 	sigrok_init();
@@ -67,11 +53,17 @@ int main()
 	while (1) {
 		tud_task();
 
+		if (tud_cdc_available()) {
+			char buf[64];
+			uint32_t count = tud_cdc_read(buf, sizeof(buf));
+			for (uint32_t i = 0; i < count; i++) {
+				sigrok_process_byte(buf[i]);
+			}
+		}
+
 		if (to_ms_since_boot(get_absolute_time()) - led_timer > 100) {
 			led_timer = to_ms_since_boot(get_absolute_time());
-			if (ana_led_get_status() != LED_STATUS_CAPTURING) {
-				ana_sync_led_with_usb();
-			}
+			sync_led_with_usb_connnection();
 		}
 	}
 

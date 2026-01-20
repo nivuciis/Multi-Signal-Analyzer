@@ -2,7 +2,6 @@
  * @file sigrok_handler.c
  *
  * @brief Handles the Sigrok protocol communication over USB CDC.
- * @author João Matheus Nascimento Dias (joao.dias@edge.ufal.br)
  * @author Vinicius Rafael Marques de Carvalho (vinicius.carvalho@edge.ufal.br)
  * @version 0.1
  * @date 15/01/2026
@@ -86,20 +85,24 @@ static void ana_send_packet(void)
 		dig_pointer += 1;
 		uint16_t digital_value = (uint16_t)(raw_digital_sample >> 16);
 
-		packet[packet_index] = 0x80 | (digital_value & 0x7F);
-		packet_index += 1;
-		packet[packet_index] = 0x80 | ((digital_value >> 7) & 0x7F);
-		packet_index += 1;
-		packet[packet_index] = 0x80 | ((digital_value >> 14) & 0x03);
-		packet_index++;
+		packet[packet_index++] = 0x80 | (digital_value & 0x7F);
+		packet[packet_index++] = 0x80 | ((digital_value >> 7) & 0x7F);
+		packet[packet_index++] = 0x80 | ((digital_value >> 14) & 0x03);
 
 		for (int j = 0; j < 3; j++) {
 			packet[packet_index] = 0x80 | (*ana_pointer >> 1);
 			ana_pointer += 1;
 			packet_index += 1;
 		}
+
+		if (packet_index >= 200) {
+			ana_send_data_buffers(packet, packet_index);
+			packet_index = 0;
+		}
 	}
-	ana_send_data_buffers(packet, packet_index);
+	if (packet_index > 0) {
+		ana_send_data_buffers(packet, packet_index);
+	}
 }
 
 void sigrok_init(void)

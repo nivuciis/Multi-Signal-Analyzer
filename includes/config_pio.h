@@ -1,67 +1,79 @@
-/*******************************************************************
- * @file config_pio.h
- *
- * @brief Configuration for PIO programs
- * @author João Matheus Nascimento Dias (joao.dias@edge.ufal.br)
- * @version 0.1
- * @date 08/01/2026
- *
- * @copyright Copyright (c) 2025
- *
- *******************************************************************/
 #ifndef CONFIG_PIO_H
 #define CONFIG_PIO_H
 
-#include "hardware/clocks.h"
-#include "hardware/dma.h"
-#include "hardware/pio.h"
-
-#include <pico/types.h>
+#include <stdbool.h>
 #include <stdint.h>
 
-/**
- * @brief Function pointer type for getting default PIO SM configuration
- *
- */
-typedef pio_sm_config (*get_default_config)(uint offset);
+#include <hardware/dma.h>
+#include <hardware/gpio.h>
+#include <hardware/irq.h>
+#include <hardware/pio.h>
+#include <pico/time.h>
+#include <pico/types.h>
 
 /**
- * @brief Initialize configuration settings
- * 
+ * @brief Configuration structure for PIO programs and DMA
+ *
  */
-void ana_config_pio_init(void);
+struct ana_config_pio {
+	PIO pio;                          /**< PIO instance */
+	uint sm;                          /**< State machine index */
+	const pio_program_t *pio_program; /**< Pointer to the PIO program */
+	uint pio_offset; /**< Offset of the PIO program in the PIO instruction memory */
+	pio_sm_config (*get_default_cfg_func)(
+		uint offset);             /**< Function to get default SM config */
+	uint pin_base;                    /**< Base GPIO pin number */
+	uint pin_count;                   /**< Number of GPIO pins */
+	uint samples;                     /**< Number of samples to capture */
+	uint dma_chan0;                   /**< DMA channel 0 */
+	dma_channel_config dma_chan0_cfg; /**< DMA channel 0 configuration */
+	void (*dma_callback)(void);       /**< DMA completion callback function */
+	uint16_t *dma_buffer;             /**< DMA buffer */
+	volatile bool dma_complete;       /**< DMA completion flag */
+};
 
 /**
- * @brief Abort any running PIO or DMA processes to avoid crashing the system
+ * @brief Initialize the PIO configuration
  *
- * @param pio Base pio instance
- * @param sm State machine to abort
- * @param dma_chan DMA channel to abort
+ * @param config Structure referencing the PIO program and DMA configuration
  */
-void ana_config_pio_initial_abort(PIO pio, uint sm, uint dma_chan);
+void ana_config_pio_init(struct ana_config_pio *config);
 
 /**
- * @brief Specific configuration for PIO and SM
+ * @brief Initialize the DMA configuration for the PIO program
  *
- * @param get_cfg Callback to get default configuration
- * @param offset This is offset where the program is loaded in PIO memory
- * @param pin_base Which pin the PIO will start reading data from ISR (GPIOs)
- * @param prog PIO program struct
- * @param sample_rate Desired sample rate for the capture
- *
- * @return pio_sm_config Configured PIO SM configuration (returned by value).
+ * @param config Structure referencing the PIO program and DMA configuration
  */
-pio_sm_config ana_config_pio_pio(get_default_config get_cfg, uint offset, uint pin_base, struct pio_program prog, uint32_t sample_rate);
+void ana_config_pio_dma_init(struct ana_config_pio *config);
 
 /**
- * @brief
+ * @brief Abort the DMA operation for the PIO program
  *
- * @param pio Base pio instance
- * @param sm State machine to configure
- * @param dma_chan DMA channel to configure
- * @param sample_count Number of samples to capture
+ * @param config Structure referencing the PIO program and DMA configuration
  */
-void ana_config_pio_dma(PIO pio, uint sm, uint dma_chan, uint32_t sample_count, uint32_t *buffer);
+void ana_config_pio_dma_abort(struct ana_config_pio *config);
 
+/**
+ * @brief Start the DMA operation for the PIO program
+ *
+ * @param config Structure referencing the PIO program and DMA configuration
+ */
+void ana_config_pio_dma_start(struct ana_config_pio *config);
 
-#endif /* CONFIG_PIO_H */
+/**
+ * @brief Wait for the DMA operation to complete for the PIO program
+ *
+ * @param config Structure referencing the PIO program and DMA configuration
+ */
+void ana_config_pio_dma_wait(struct ana_config_pio *config);
+
+/**
+ * @brief Check if the DMA operation is busy for the PIO program
+ *
+ * @param config Structure referencing the PIO program and DMA configuration
+ * @return true  If the DMA is busy
+ * @return false Otherwise
+ */
+bool ana_config_pio_dma_is_busy(struct ana_config_pio *config);
+
+#endif

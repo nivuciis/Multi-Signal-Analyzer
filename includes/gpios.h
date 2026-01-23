@@ -12,41 +12,56 @@
 #ifndef GPIOS_H
 #define GPIOS_H
 
+#include "config_pio.h"
+
 #include <stdint.h>
-
-#include <pico/types.h>
-#include <hardware/gpio.h>
-#include <hardware/pio.h>
-
-static PIO pio_gpios = pio0;
-static uint sm_gpios = 1;
-static uint pio_gpios_offset;
-static int dma_gpios_chan;
 
 /**
  * @brief Number of GPIO pins used.
- * 
+ *
  */
 #define GPIOS_NUM_PINS 12
 
 /**
  * @brief Starting GPIO pin number.
- * 
+ *
  */
 #define GPIOS_START_PIN 9
 
 /**
- * @brief Initialize the GPIOs system.
- * 
- * @param dma_buffer Pointer to the DMA buffer for storing GPIO readings.
- * @param clk_sys System clock frequency in Hz.
+ * @brief Initialize the GPIOs module.
+ *
  */
-void ana_gpios_init(uint16_t *dma_buffer, double clk_sys);
+void ana_gpios_init(void);
 
 /**
  * @brief Get data from GPIOs.
- * 
+ *
  */
- void ana_gpios_get_data();
+void ana_gpios_get_data(void);
+
+/**
+ * @brief Get data from GPIOs (version 2).
+ *
+ */
+void ana_gpios_get_data_v2(void);
+
+/**
+ * @brief Print GPIO data.
+ *
+ */
+void ana_gpios_print_data(void);
+
+/**
+ * @brief Test PIO direct functionality.
+ *
+ */
+void ana_gpios_test_pio_direct(void);
+
+/**
+ * @brief Get buffer of GPIO data.
+ *
+ */
+uint16_t *ana_gpios_get_buffer(void);
 
 #endif /* GPIOS_H */

@@ -7,24 +7,27 @@
 ;
 ; @copyright Copyright (c) 2025
 
-.program bring_up_gpios
-    pull                ; Get the number of timer is to read
-    mov x, osr          ; Store timer number in X scratch register
+; .program bring_up_gpios
+; pull block                ; Number of samples
+; out y, 32
+; 
+; .wrap_target
+; LOOP:
+   ; mov isr, null
+   ; in pins, 12
+   ; push block
+   ; jmp y--, LOOP
+   ; irq 0
+; .wrap
 
+.program bring_up_gpios
 .wrap_target
-    in pins, 12         ; Read the first sample from the GPIO pin into the ISR
-    jmp x--, LOOP       ; Loop back to read the GPIO pin again
-    jmp NOTIFY_SYSTEM   ; Lock the program here
+LOOP:
+   in pins, 12
+   push block
+   jmp LOOP 
 .wrap
 
-LOOP:
-    in pins, 12         ; Read the all 'y' GPIO pin into the ISR
-    jmp x--, LOOP       ; Loop back to read the GPIO pin again
-    
-NOTIFY_SYSTEM:
-    irq 0               ; Trigger IRQ 0. notify the system the progrem has read the pin
-LOCK:
-    jmp LOCK            ; Lock the program here
 
 % c-sdk {
 

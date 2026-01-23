@@ -11,62 +11,210 @@
  *******************************************************************/
 
 #include "bring_up_gpios.pio.h"
+#include "config_pio.h"
 #include "gpios.h"
 
-#include <assert.h>
+#include <stdio.h>
+#include <string.h>
 
 #include <hardware/dma.h>
+#include <hardware/gpio.h>
+#include <hardware/irq.h>
 #include <hardware/pio.h>
+#include <pico/time.h>
+#include <pico/types.h>
 
-static void gpios_cfg_dma(uint32_t *dma_buffer)
+#define GPIO_SAMPLES 1024
+
+static struct ana_config_pio gpio_config;
+static uint16_t dma_gpios_buffer[GPIO_SAMPLES];
+
+uint16_t *ana_gpios_get_buffer()
 {
-	dma_channel_config dma_cfg = dma_channel_get_default_config(dma_gpios_chan);
-
-	channel_config_set_transfer_data_size(&dma_cfg, DMA_SIZE_16);
-	channel_config_set_read_increment(&dma_cfg, false);
-	channel_config_set_write_increment(&dma_cfg, true);
-	channel_config_set_dreq(&dma_cfg, pio_get_dreq(pio_gpios, sm_gpios, false));
-
-	dma_channel_configure(dma_gpios_chan, &dma_cfg, dma_buffer, &pio_gpios->rxf[sm_gpios],
-			      GPIOS_NUM_PINS, false);
+	return dma_gpios_buffer;
 }
 
-void ana_gpios_init(uint16_t *dma_buffer, double clk_sys)
+static void __not_in_flash_func(gpios_capture_finished)(void)
 {
-	assert(dma_buffer != NULL);
+	uint32_t ints = dma_hw->ints0;
+	dma_hw->ints0 = ints;
 
-	pio_gpios_offset = pio_add_program(pio_gpios, &bring_up_gpios_program);
-	sm_gpios = pio_claim_unused_sm(pio_gpios, true);
-	dma_gpios_chan = dma_claim_unused_channel(true);
-	pio_sm_init(pio_gpios, sm_gpios, pio_gpios_offset, NULL);
+	if (ints & (1u << gpio_config.dma_chan0)) {
+		dma_channel_acknowledge_irq0(gpio_config.dma_chan0);
+
+		/**
+		 * @note Never restart the DMA here if using wait_for_finish_blocking, cus it'll
+		 * cause an infinite loop.
+		 */
+
+		gpio_config.dma_complete = true;
+
+		pio_sm_set_enabled(gpio_config.pio, gpio_config.sm, false);
+
+		printf("GPIO DMA IRQ triggered\n");
+	}
 
 	/**
-	 * @brief Construct a new dma channel and pio abort object
+	 * @note If use the dma_chan1 set the config bellow as  above
+	 * if (ints & (1u << gpio_config.dma_chan1)) { ... }
 	 *
 	 */
-	dma_channel_abort(dma_gpios_chan);
-	pio_sm_set_enabled(pio_gpios, sm_gpios, false);
-	pio_sm_clear_fifos(pio_gpios, sm_gpios);
-
-	pio_sm_config c = bring_up_gpios_program_get_default_config(pio_gpios_offset);
-
-	sm_config_set_in_pins(&c, GPIOS_START_PIN);
-	sm_config_set_wrap(&c, pio_gpios_offset,
-			   pio_gpios_offset + bring_up_gpios_program.length - 1);
-
-	float div = (float)clk_sys / 1e6; // 1 MHz
-	sm_config_set_clkdiv(&c, div);
-
-	sm_config_set_in_shift(&c, false, true, 16);
-
-	return;
 }
 
-void ana_gpios_get_data()
+void ana_gpios_init(void)
 {
-    dma_channel_start(dma_gpios_chan);
-    pio_sm_set_enabled(pio_gpios, sm_gpios, true);
+	printf("GPIOS init\n");
 
-    dma_channel_wait_for_finish_blocking(dma_gpios_chan);
-    pio_sm_set_enabled(pio_gpios, sm_gpios, false);
+	gpio_config.pio_program = &bring_up_gpios_program;
+	gpio_config.get_default_cfg_func = bring_up_gpios_program_get_default_config;
+
+	/**
+	 * @note To use wait_for_finish_blocking you can't use a callback
+	 *
+	 * use NULL for blocking mode
+	 */
+	/**< gpio_config.dma_callback = gpios_capture_finished;  */
+
+	gpio_config.dma_callback = NULL; // Use NULL para modo bloqueante
+
+	gpio_config.dma_buffer = dma_gpios_buffer;
+	gpio_config.pin_base = 9;
+	gpio_config.pin_count = 2;
+	gpio_config.samples = 10;
+
+	ana_config_pio_init(&gpio_config);
+	ana_config_pio_dma_init(&gpio_config);
+}
+
+void ana_gpios_get_data(void)
+{
+	printf("Start GPIO capture\n");
+
+	pio_sm_set_enabled(gpio_config.pio, gpio_config.sm, false);
+
+	memset(gpio_config.dma_buffer, 0, sizeof(uint16_t) * gpio_config.samples);
+
+	pio_sm_clear_fifos(gpio_config.pio, gpio_config.sm);
+	pio_sm_restart(gpio_config.pio, gpio_config.sm);
+
+	dma_channel_configure(gpio_config.dma_chan0, &gpio_config.dma_chan0_cfg,
+			      gpio_config.dma_buffer, &gpio_config.pio->rxf[gpio_config.sm],
+			      gpio_config.samples, false);
+	dma_channel_start(gpio_config.dma_chan0);
+
+	pio_sm_set_enabled(gpio_config.pio, gpio_config.sm, true);
+	dma_channel_wait_for_finish_blocking(gpio_config.dma_chan0);
+	pio_sm_set_enabled(gpio_config.pio, gpio_config.sm, false);
+
+	printf("DMA transfer finished\n");
+
+	if (dma_channel_is_busy(gpio_config.dma_chan0)) {
+		printf("ERROR: DMA still busy! Aborting...\n");
+		dma_channel_abort(gpio_config.dma_chan0);
+	} else {
+		printf("DMA completed successfully\n");
+	}
+}
+
+void ana_gpios_get_data_v2(void)
+{
+	printf("Start GPIO capture (v2)\n");
+
+	pio_sm_set_enabled(gpio_config.pio, gpio_config.sm, false);
+	memset(gpio_config.dma_buffer, 0, sizeof(uint16_t) * gpio_config.samples);
+	pio_sm_clear_fifos(gpio_config.pio, gpio_config.sm);
+	pio_sm_restart(gpio_config.pio, gpio_config.sm);
+
+	ana_config_pio_dma_start(&gpio_config);
+
+	pio_sm_set_enabled(gpio_config.pio, gpio_config.sm, true);
+	ana_config_pio_dma_wait(&gpio_config);
+	pio_sm_set_enabled(gpio_config.pio, gpio_config.sm, false);
+
+	printf("DMA transfer finished (v2)\n");
+}
+
+void ana_gpios_print_data(void)
+{
+	if (gpio_config.pin_count == 0 || gpio_config.pin_count > 16) {
+		printf("ERROR: Invalid pin_count: %u\n", gpio_config.pin_count);
+		return;
+	}
+
+	printf("GPIO Data (each column is a pin, left-to-right = pin_map[0]..pin_map[n-1]):\n");
+
+	printf("Pins:   ");
+	for (uint i = 0; i < gpio_config.pin_count; i++) {
+		printf("%3u", gpio_config.pin_base + i);
+	}
+	printf("\n");
+
+	printf("Sample: ");
+	for (uint i = 0; i < gpio_config.pin_count; i++) {
+		printf("---");
+	}
+	printf("\n");
+
+	uint samples_to_show = gpio_config.samples;
+	if (samples_to_show > 20) {
+		samples_to_show = 20;
+		printf("(Showing first 20 of %u samples)\n", gpio_config.samples);
+	}
+
+	for (uint s = 0; s < samples_to_show; s++) {
+		uint16_t v = gpio_config.dma_buffer[s];
+		printf("%6u:", s);
+
+		/* Print bits for each pin in pin_map order (pin_map[0] -> first bit printed) */
+		for (uint i = 0; i < gpio_config.pin_count; i++) {
+			uint bit = (v >> i) & 0x1u;
+			printf("  %u", bit);
+		}
+
+		printf("  0x%04X\n", v);
+	}
+
+	if (gpio_config.samples > 20) {
+		printf("...\n");
+		uint16_t v = gpio_config.dma_buffer[gpio_config.samples - 1];
+		printf("%6u:", gpio_config.samples - 1);
+		for (uint i = 0; i < gpio_config.pin_count; i++) {
+			uint bit = (v >> i) & 0x1u;
+			printf("  %u", bit);
+		}
+		printf("  0x%04X\n", v);
+	}
+}
+
+void ana_gpios_test_pio_direct(void)
+{
+	printf("\n=== Testing PIO without DMA ===\n");
+
+	pio_sm_set_enabled(gpio_config.pio, gpio_config.sm, false);
+	pio_sm_clear_fifos(gpio_config.pio, gpio_config.sm);
+	pio_sm_restart(gpio_config.pio, gpio_config.sm);
+	pio_sm_set_enabled(gpio_config.pio, gpio_config.sm, true);
+
+	sleep_ms(100);
+
+	uint fifo_level = pio_sm_get_rx_fifo_level(gpio_config.pio, gpio_config.sm);
+	printf("PIO FIFO level: %u\n", fifo_level);
+
+	if (fifo_level > 0) {
+		uint16_t data = pio_sm_get(gpio_config.pio, gpio_config.sm);
+		printf("Direct PIO read: 0x%04X\n", data);
+
+		for (uint i = 0; i < gpio_config.pin_count; i++) {
+			uint bit = (data >> i) & 0x1u;
+			printf("  Pin %u: %u\n", gpio_config.pin_base + i, bit);
+		}
+	} else {
+		printf("ERROR: No data in PIO FIFO!\n");
+		printf("Check: \n");
+		printf("  1. PIO program loaded correctly\n");
+		printf("  2. Pins configured as inputs\n");
+		printf("  3. Clock divider set correctly\n");
+	}
+
+	pio_sm_set_enabled(gpio_config.pio, gpio_config.sm, false);
 }

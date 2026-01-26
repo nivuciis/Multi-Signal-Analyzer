@@ -13,11 +13,10 @@
 
 #include <assert.h>
 #include <stdbool.h>
+#include <stdio.h>
 
-#include <cstdint>
 #include <hardware/adc.h>
 #include <hardware/gpio.h>
-#include <hardware/pio.h>
 
 /**
  * @brief Base GPIO pin number for ADC channels in Subtravtic board.
@@ -40,6 +39,11 @@
  * - input adc 7 --> GPIO 47
  */
 #define ADC_BASE_SUBTRAVTIC 40
+/** 
+* #define ADC_BASE_SUBTRAVTIC 26
+* 
+* @note: used in ana_adc_read_single_channel() for tests at rp2040
+*/
 
 /**
  * @brief Mask for ADC channels reading.
@@ -55,7 +59,7 @@
  */
 static const double ADC_FACTOR_CONVERSION = 3.3f / (double)(1 << 12);
 
-void read_adc_single_channel(double *rsp, int gpio_pin)
+void ana_adc_read_single_channel(double *rsp, int gpio_pin)
 {
 	uint16_t raw_data = 0;
 	double result = 0.0f;
@@ -65,10 +69,11 @@ void read_adc_single_channel(double *rsp, int gpio_pin)
 	raw_data = adc_read();
 	result = (double)raw_data * ADC_FACTOR_CONVERSION *
 		 1000.0f; /* The value returned is in millivolts */
+
 	*rsp = result;
 }
 
-void read_adc_multiple_channels(double *rsp1, double *rsp2, double *rsp3, uint16_t samples)
+void ana_adc_read_multiple_channels(double *rsp1, double *rsp2, double *rsp3, uint16_t samples)
 {
 	samples = (samples <= 0) ? 1 : samples;
 
@@ -77,9 +82,9 @@ void read_adc_multiple_channels(double *rsp1, double *rsp2, double *rsp3, uint16
 	adc_run(true);
 
 	for (uint16_t i = 0; i < samples; i++) {
-		read_adc_single_channel(rsp1 + i, ADC_CHAN1_GPIO_PIN);
-		read_adc_single_channel(rsp2 + i, ADC_CHAN2_GPIO_PIN);
-		read_adc_single_channel(rsp3 + i, ADC_CHAN3_GPIO_PIN);
+		ana_adc_read_single_channel(rsp1 + i, ADC_CHAN1_GPIO_PIN);
+		ana_adc_read_single_channel(rsp2 + i, ADC_CHAN2_GPIO_PIN);
+		ana_adc_read_single_channel(rsp3 + i, ADC_CHAN3_GPIO_PIN);
 	}
 
 	adc_run(false);
@@ -87,6 +92,8 @@ void read_adc_multiple_channels(double *rsp1, double *rsp2, double *rsp3, uint16
 
 void ana_adc_init(void)
 {
+	printf("\n \tADC init\n");
+
 	adc_init();
 
 	adc_gpio_init(ADC_CHAN1_GPIO_PIN);

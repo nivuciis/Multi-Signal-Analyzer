@@ -7,19 +7,6 @@
 ;
 ; @copyright Copyright (c) 2025
 
-; .program bring_up_gpios
-; pull block                ; Number of samples
-; out y, 32
-; 
-; .wrap_target
-; LOOP:
-   ; mov isr, null
-   ; in pins, 12
-   ; push block
-   ; jmp y--, LOOP
-   ; irq 0
-; .wrap
-
 .program bring_up_gpios
 .wrap_target
 LOOP:
@@ -27,7 +14,6 @@ LOOP:
    push block
    jmp LOOP 
 .wrap
-
 
 % c-sdk {
 

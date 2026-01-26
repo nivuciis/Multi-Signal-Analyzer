@@ -17,51 +17,17 @@
 #include <stdint.h>
 
 /**
- * @brief Number of GPIO pins used.
- *
- */
-#define GPIOS_NUM_PINS 12
-
-/**
- * @brief Starting GPIO pin number.
- *
- */
-#define GPIOS_START_PIN 9
-
-/**
  * @brief Initialize the GPIOs module.
  *
  */
 void ana_gpios_init(void);
 
 /**
- * @brief Get data from GPIOs.
+ * @brief Get data configuration of GPIOS.
  *
+ * @return (struct ana_config_system *) Point to Configuration of GPIOs module
  */
-void ana_gpios_get_data(void);
-
-/**
- * @brief Get data from GPIOs (version 2).
- *
- */
-void ana_gpios_get_data_v2(void);
-
-/**
- * @brief Print GPIO data.
- *
- */
-void ana_gpios_print_data(void);
-
-/**
- * @brief Test PIO direct functionality.
- *
- */
-void ana_gpios_test_pio_direct(void);
-
-/**
- * @brief Get buffer of GPIO data.
- *
- */
-uint16_t *ana_gpios_get_buffer(void);
+struct ana_config_system *ana_gpios_get_config(void);
 
 #endif /* GPIOS_H */
+    

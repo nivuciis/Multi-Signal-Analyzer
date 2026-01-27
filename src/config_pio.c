@@ -10,11 +10,13 @@
  *
  *******************************************************************/
 #include "config_pio.h"
+#include "log.h"
 
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 
+#include <hardware/address_mapped.h>
 #include <hardware/clocks.h>
 #include <hardware/dma.h>
 #include <hardware/gpio.h>
@@ -22,11 +24,12 @@
 #include <hardware/pio.h>
 #include <pico/error.h>
 
+
 void ana_config_pio_init(struct ana_config_system *config)
 {
-    printf("DEBUG: Initializing PIO for module %s\n", config->module.name);
+	log_debug(config->module.name, "Initializing PIO...");
 
-    int pin;
+	int pin;
 
 	config->pio.instance = pio0;
 	config->pio.sm = pio_claim_unused_sm(config->pio.instance, true);
@@ -41,6 +44,13 @@ void ana_config_pio_init(struct ana_config_system *config)
 		pin = config->module.pin_base + i;
 		pio_gpio_init(config->pio.instance, pin);
 		gpio_pull_down(pin);
+		// //_REG_(PADS_BANK0_BASE + (pin*4) &= 1u<<3);
+		// io_rw_32 *pads_reg = (io_rw_32 *)(PADS_BANK0_BASE + (pin * 4));
+		// *pads_reg &= ~(1u << 3);
+		// asm volatile("nop");
+		// *pads_reg &= (1u << 2);
+		// asm volatile("nop");
+		// asm volatile("nop");
 	}
 
 	pio_sm_set_consecutive_pindirs(config->pio.instance, config->pio.sm,
@@ -63,7 +73,7 @@ void ana_config_pio_init(struct ana_config_system *config)
 
 void ana_config_pio_dma_init(struct ana_config_system *config)
 {
-    printf("DEBUG: Initializing DMA for module %s\n", config->module.name);
+	log_debug(config->module.name, "Initializing DMA...");
 
 	config->dma.instance = dma_claim_unused_channel(true);
 
@@ -99,6 +109,7 @@ void ana_config_pio_dma_start(struct ana_config_system *config)
 void ana_config_pio_dma_wait(struct ana_config_system *config)
 {
 	dma_channel_wait_for_finish_blocking(config->dma.instance);
+
 	config->dma.has_complete = true;
 }
 
@@ -122,7 +133,7 @@ void ana_config_pio_dma_abort(struct ana_config_system *config)
 
 void ana_config_pio_get_data(struct ana_config_system *config)
 {
-	printf("Start GPIO capture\n");
+	log_debug(config->module.name, "Start GPIO capture");
 
 	pio_sm_set_enabled(config->pio.instance, config->pio.sm, false);
 
@@ -139,19 +150,19 @@ void ana_config_pio_get_data(struct ana_config_system *config)
 	pio_sm_set_enabled(config->pio.instance, config->pio.sm, true);
 	dma_channel_wait_for_finish_blocking(config->dma.instance);
 	pio_sm_set_enabled(config->pio.instance, config->pio.sm, false);
-	printf("DMA transfer finished\n");
+	log_debug(config->module.name, "DMA transfer finished");
 
 	if (dma_channel_is_busy(config->dma.instance)) {
-		printf("ERROR: DMA still busy! Aborting...\n");
+		log_err(config->module.name, "DMA still busy! Aborting...");
 		dma_channel_abort(config->dma.instance);
 	} else {
-		printf("DMA completed successfully\n");
+		log_debug(config->module.name, "DMA completed successfully");
 	}
 }
 
 void ana_config_pio_get_data_v2(struct ana_config_system *config)
 {
-	printf("Start GPIO capture (v2)\n");
+	log_debug(config->module.name, "Start GPIO capture (v2)");
 
 	pio_sm_set_enabled(config->pio.instance, config->pio.sm, false);
 	memset(config->dma.dma_buffer, 0, sizeof(uint16_t) * config->module.samples);
@@ -163,18 +174,17 @@ void ana_config_pio_get_data_v2(struct ana_config_system *config)
 	pio_sm_set_enabled(config->pio.instance, config->pio.sm, true);
 	ana_config_pio_dma_wait(config);
 	pio_sm_set_enabled(config->pio.instance, config->pio.sm, false);
-	printf("DMA transfer finished (v2)\n");
+	log_debug(config->module.name, "DMA transfer finished (v2)");
 }
 
 void ana_config_pio_print_data(struct ana_config_system *config)
 {
 	if (config->module.pin_count == 0 || config->module.pin_count > 16) {
-		printf("ERROR: Invalid pin_count: %u\n", config->module.pin_count);
+		log_err(config->module.name, "Invalid pin_count: %u", config->module.pin_count);
 		return;
 	}
 
-	printf("GPIO Data (each column is a pin, left-to-right = pin_map[0]..pin_map[n-1]):\n");
-
+	log_debug(config->module.name, "GPIO Data (each column is a pin, left-to-right = pin_map[0]..pin_map[n-1]):");
 	printf("Pins:   ");
 	for (uint i = 0; i < config->module.pin_count; i++) {
 		printf("%3u", config->module.pin_base + i);
@@ -220,7 +230,7 @@ void ana_config_pio_print_data(struct ana_config_system *config)
 
 void ana_config_pio_test_pio_direct(struct ana_config_system *config)
 {
-	printf("\n=== Testing PIO without DMA ===\n");
+	log_debug(config->module.name, "Testing PIO without DMA");
 
 	pio_sm_set_enabled(config->pio.instance, config->pio.sm, false);
 	pio_sm_clear_fifos(config->pio.instance, config->pio.sm);
@@ -230,22 +240,21 @@ void ana_config_pio_test_pio_direct(struct ana_config_system *config)
 	sleep_ms(100);
 
 	uint fifo_level = pio_sm_get_rx_fifo_level(config->pio.instance, config->pio.sm);
-	printf("PIO FIFO level: %u\n", fifo_level);
+	log_debug(config->module.name, "PIO FIFO level: %u", fifo_level);
 
 	if (fifo_level > 0) {
 		uint16_t data = pio_sm_get(config->pio.instance, config->pio.sm);
-		printf("Direct PIO read: 0x%04X\n", data);
-
+		log_debug(config->module.name, "Direct PIO read: 0x%04X", data);
 		for (uint i = 0; i < config->module.pin_count; i++) {
 			uint bit = (data >> i) & 0x1u;
 			printf("  Pin %u: %u\n", config->module.pin_base + i, bit);
 		}
 	} else {
-		printf("ERROR: No data in PIO FIFO!\n");
-		printf("Check: \n");
-		printf("  1. PIO program loaded correctly\n");
-		printf("  2. Pins configured as inputs\n");
-		printf("  3. Clock divider set correctly\n");
+		log_err(config->module.name, "No data in PIO FIFO!");
+		log_err(config->module.name, "Check: ");
+		log_err(config->module.name, "  1. PIO program loaded correctly");
+		log_err(config->module.name, "  2. Pins configured as inputs");
+		log_err(config->module.name, "  3. Clock divider set correctly");
 	}
 
 	pio_sm_set_enabled(config->pio.instance, config->pio.sm, false);

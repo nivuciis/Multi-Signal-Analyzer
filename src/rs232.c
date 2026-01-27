@@ -10,8 +10,9 @@
  *
  *******************************************************************/
 #include "bring_up_rs232.pio.h"
-#include "rs232.h"
 #include "config_pio.h"
+#include "rs232.h"
+#include "log.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -41,7 +42,7 @@ static void __not_in_flash_func(rs232_capture_finished)(void)
 
 		pio_sm_set_enabled(rs232.pio.instance, rs232.pio.sm, false);
 
-		printf("rs232 DMA IRQ triggered\n");
+		log_inf(RS232_MODULE_NAME, "RS232 DMA IRQ triggered");
 	}
 
 	/**
@@ -53,7 +54,7 @@ static void __not_in_flash_func(rs232_capture_finished)(void)
 
 void ana_rs232_init(void)
 {
-	printf("\n \trs232 init\n");
+	log_inf(RS232_MODULE_NAME, "Initializing...");
 
 	rs232.pio.pio_program = &bring_up_rs232_program;
 	rs232.pio.get_default_cfg_func = bring_up_rs232_program_get_default_config;

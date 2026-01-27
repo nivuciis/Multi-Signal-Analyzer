@@ -10,8 +10,9 @@
  *
  *******************************************************************/
 #include "bring_up_rs485.pio.h"
-#include "rs485.h"
 #include "config_pio.h"
+#include "rs485.h"
+#include "log.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -41,7 +42,7 @@ static void __not_in_flash_func(rs485_capture_finished)(void)
 
 		pio_sm_set_enabled(rs485.pio.instance, rs485.pio.sm, false);
 
-		printf("rs485 DMA IRQ triggered\n");
+		log_inf(RS485_MODULE_NAME, "RS485 DMA IRQ triggered");
 	}
 
 	/**
@@ -53,7 +54,7 @@ static void __not_in_flash_func(rs485_capture_finished)(void)
 
 void ana_rs485_init(void)
 {
-	printf("\n \trs485 init\n");
+	log_inf(RS485_MODULE_NAME, "Initializing...");
 
 	rs485.pio.pio_program = &bring_up_rs485_program;
 	rs485.pio.get_default_cfg_func = bring_up_rs485_program_get_default_config;

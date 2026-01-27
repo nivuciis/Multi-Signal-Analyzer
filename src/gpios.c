@@ -13,6 +13,7 @@
 #include "bring_up_gpios.pio.h"
 #include "config_pio.h"
 #include "gpios.h"
+#include "log.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -49,19 +50,19 @@ static void __not_in_flash_func(gpios_capture_finished)(void)
 
 		pio_sm_set_enabled(gpio.pio.instance, gpio.pio.sm, false);
 
-		printf("GPIO DMA IRQ triggered\n");
+		log_inf(GPIO_MODULE_NAME, "GPIO DMA IRQ triggered");
 	}
 
 	/**
-	 * @note If use the dma_chan1 set the config bellow as  above
-	 * if (ints & (1u << gpio_config.dma_chan1)) { ... }
+	 * @note If use the dma_chan2 set the config bellow as  above
+	 * if (ints & (1u << gpio.dma.instance2)) { ... }
 	 *
 	 */
 }
 
 void ana_gpios_init(void)
 {
-	printf("\n \tGPIOS init\n");
+	log_inf(GPIO_MODULE_NAME, "Initializing...");
 
 	gpio.pio.pio_program = &bring_up_gpios_program;
 	gpio.pio.get_default_cfg_func = bring_up_gpios_program_get_default_config;
@@ -70,10 +71,11 @@ void ana_gpios_init(void)
 	 * @note To use wait_for_finish_blocking you can't use a callback
 	 *
 	 * use NULL for blocking mode
+	 *
+	 * < gpio_config.dma_callback = gpios_capture_finished;  
 	 */
-	/**< gpio_config.dma_callback = gpios_capture_finished;  */
 
-	gpio.dma.callback = NULL; // Use NULL para modo bloqueante
+	gpio.dma.callback = NULL; 
 
 	gpio.dma.dma_buffer = dma_gpios_buffer;
 	gpio.module.samples = GPIO_SAMPLES;

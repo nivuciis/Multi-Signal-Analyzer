@@ -10,8 +10,9 @@
  *
  *******************************************************************/
 #include "bring_up_can.pio.h"
-#include "can.h"
 #include "config_pio.h"
+#include "can.h"
+#include "log.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -41,7 +42,7 @@ static void __not_in_flash_func(can_capture_finished)(void)
 
 		pio_sm_set_enabled(can.pio.instance, can.pio.sm, false);
 
-		printf("can DMA IRQ triggered\n");
+		log_inf(CAN_MODULE_NAME, "CAN DMA IRQ triggered");
 	}
 
 	/**
@@ -53,7 +54,7 @@ static void __not_in_flash_func(can_capture_finished)(void)
 
 void ana_can_init(void)
 {
-	printf("\n \tcan init\n");
+	log_inf(CAN_MODULE_NAME, "Initializing...");
 
 	can.pio.pio_program = &bring_up_can_program;
 	can.pio.get_default_cfg_func = bring_up_can_program_get_default_config;

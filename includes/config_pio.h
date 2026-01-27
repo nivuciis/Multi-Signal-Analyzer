@@ -19,9 +19,10 @@
  */
 struct ana_config_modulo {
 	char name[ANA_CONFIG_MODULE_NAME_MAX_LEN]; /**< Name of the module */
-	uint pin_base;                                    /**< Base GPIO pin number */
-	uint pin_count;                                   /**< Number of GPIO pins */
-	uint samples;                                     /**< Number of samples */
+	uint pin_base;                             /**< Base GPIO pin number */
+	uint pin_count;                            /**< Number of GPIO pins */
+	uint samples;                              /**< Number of samples */
+	float sample_rate_hz;                      /**< Sample rate in Hz */
 };
 
 /**
@@ -31,7 +32,7 @@ struct ana_config_modulo {
 struct ana_config_dma {
 	uint instance;                   /**< DMA channel number */
 	dma_channel_config instance_cfg; /**< DMA channel configuration */
-	void (*callback)(void);      /**< DMA callback function */
+	void (*callback)(void);          /**< DMA callback function */
 	uint16_t *dma_buffer;            /**< DMA buffer pointer */
 	volatile bool has_complete;      /**< DMA completion flag */
 };
@@ -41,7 +42,7 @@ struct ana_config_dma {
  *
  */
 struct ana_config_pio {
-	PIO instance;                          /**< PIO instance */
+	PIO instance;                     /**< PIO instance */
 	uint sm;                          /**< State machine number */
 	const pio_program_t *pio_program; /**< Pointer to the PIO program */
 	uint pio_offset;                  /**< Offset of the PIO program */
@@ -50,7 +51,7 @@ struct ana_config_pio {
 };
 
 /**
- * @brief Configuration structure for PIO programs and DMA modele
+ * @brief Configuration structure for PIO programs and DMA module
  *
  */
 struct ana_config_system {

@@ -17,6 +17,7 @@
 #include "led.h"
 #include "rs232.h"
 #include "rs485.h"
+#include "log.h"
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -43,14 +44,14 @@ static enum ana_cmd_code get_cmd_by_serial(void)
 
 static void _cmd_table()
 {
-	printf("\n \tAvailable Commands:\n");
-	printf("0x00 - Reserved\n");
-	printf("0x01 - ADC Test\n");
-	printf("0x02 - CAN Test\n");
-	printf("0x03 - GPIOS Test\n");
-	printf("0x04 - LED Test\n");
-	printf("0x05 - RS232 Test\n");
-	printf("0x06 - RS485 Test\n\n");
+	printf("\n \tMulti-Signal Analyzer - Command Table\n");
+	log_inf("main", "0x00 - Reserved");
+	log_inf("main", "0x01 - ADC Test");
+	log_inf("main", "0x02 - CAN Test");
+	log_inf("main", "0x03 - GPIOS Test");
+	log_inf("main", "0x04 - LED Test");
+	log_inf("main", "0x05 - RS232 Test");
+	log_inf("main", "0x06 - RS485 Test\n");
 }
 
 int main()

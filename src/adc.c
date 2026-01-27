@@ -10,6 +10,7 @@
  *
  *******************************************************************/
 #include "adc.h"
+#include "log.h"
 
 #include <assert.h>
 #include <stdbool.h>
@@ -92,7 +93,7 @@ void ana_adc_read_multiple_channels(double *rsp1, double *rsp2, double *rsp3, ui
 
 void ana_adc_init(void)
 {
-	printf("\n \tADC init\n");
+	log_inf("ADC", "Initializing...");
 
 	adc_init();
 

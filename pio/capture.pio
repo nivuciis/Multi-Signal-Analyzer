@@ -3,8 +3,8 @@
  * @brief PIO program for capturing digital signals from GPIO pins 
  *
  * @author    Vinicius Rafael Marques de Carvalho <vinicius.carvalho@edge.ufal.br>
- * @version   v1.0
- * @date      15/01/2026
+ * @version   0.1
+ * @date      28/01/2026
  * @copyright Copyright (c) 2026
  *  ------------------------------------------------------------*/
 
@@ -12,5 +12,4 @@
 
 .wrap_target
     in pins, 16
-    in null, 16
 .wrap

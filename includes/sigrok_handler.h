@@ -4,7 +4,7 @@
  *
  * @author   Vinicius Rafael Marques de Carvalho <vinicius.carvalho@edge.ufal.br>
  * @version  0.1
- * @date     15/01/2026
+ * @date     28/01/2026
  * @copyright Copyright (c) 2026
  *  ------------------------------------------------------------*/
 
@@ -41,16 +41,17 @@
 #define GET_ANALOG_SCALE_CMD 'a'
 
 /**
- * @brief enable analog channel
- *
+ * @brief Set analog channels
+ *  
+ * @note The received message is Axyy where x is 0 for disabled, 1 for enabled and yy is the specified channel
  */
-#define ENABLE_ANALOG_CHANNEL_CMD 'A'
+#define SET_ANALOG_CHANNEL_CMD 'A'
 
 /**
- * @brief Enable digital channel
+ * @brief Set digital channel
  *
  */
-#define ENABLE_DIGITAL_CHANNEL_CMD 'D'
+#define SET_DIGITAL_CHANNEL_CMD 'D'
 
 /**
  * @brief Starts the capture process

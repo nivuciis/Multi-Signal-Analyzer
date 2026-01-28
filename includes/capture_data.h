@@ -25,7 +25,7 @@
  * @brief Digital buffer
  * @note Captures 32 bits per sample
  */
-extern uint32_t digital_capture_buffer[CAPTURE_DEPTH];
+extern uint16_t digital_capture_buffer[CAPTURE_DEPTH];
 
 /**
  * @brief Analog buffer
@@ -39,19 +39,22 @@ extern uint8_t analog_capture_buffer[CAPTURE_DEPTH * 3];
 int ana_capture_init(void);
 
 /**
- * @brief Send the buffer through USB
- *
- * @param buffer Buffer that stores information from the PIO state machine
- * @param num_samples Number of samples captured by the PIO program
- */
-void ana_send_captured_data(const uint32_t *buffer, uint32_t num_samples);
-
-/**
  * @brief Start the capturing process
  *
  * @param sample_count Number of samples to capture
  * @param sample_rate_hz Sample rate in Hz
+ * @param capture_buffer Pointer to the buffer that will store the captured data
+ * @param analog_mask Bitmask to indicate which analog channels to capture
  */
-void ana_capture_data(uint32_t sample_count, uint32_t sample_rate_hz, uint32_t *capture_buffer);
+void ana_capture_data(uint32_t sample_count, uint32_t sample_rate_hz, uint32_t *capture_buffer, uint8_t analog_mask);
+
+
+/**
+ * @brief Get the analog channels count object
+ * 
+ * @param analog_mask bitmask of analog channels enabled
+ * @return int number of analog channels enabled
+ */
+int ana_get_analog_channels_count(uint8_t analog_mask);
 
 #endif // CAPTURE_DATA_H

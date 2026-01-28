@@ -10,6 +10,7 @@
  *
  *******************************************************************/
 #include "log.h"
+#include "debug.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -51,12 +52,12 @@ void log_warn(char* module, const char *fmt, ...)
 
 void log_debug(char* module, const char *fmt, ...)
 {
-    #ifdef DEBUG
+    #if DEBUG == 1
     va_list args;
     va_start(args, fmt);
     printf(ANSI_YELLOW "[%s] DEBUG: ", module);
     vprintf(fmt, args);
-    printf("\n");
+    printf(ANSI_RESET "\n");
     va_end(args);
     #endif
 }

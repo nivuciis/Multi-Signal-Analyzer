@@ -19,6 +19,7 @@
 #define ANSI_RED    "\x1b[31m"
 #define ANSI_GREEN  "\x1b[32m"
 #define ANSI_YELLOW "\x1b[33m"
+#define ANSI_BLUE   "\x1b[34m"
 
 void log_inf(char *module, const char *fmt, ...)
 {
@@ -55,7 +56,7 @@ void log_debug(char *module, const char *fmt, ...)
 #if DEBUG == 1
 	va_list args;
 	va_start(args, fmt);
-	printf(ANSI_YELLOW "[%s] DEBUG: ", module);
+	printf(ANSI_BLUE "[%s] DEBUG: ", module);
 	vprintf(fmt, args);
 	printf(ANSI_RESET "\n");
 	va_end(args);

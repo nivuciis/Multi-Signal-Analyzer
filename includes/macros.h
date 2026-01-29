@@ -13,6 +13,10 @@
 #ifndef MACROS_H
 #define MACROS_H
 
+#define LOG_MODULE "macros"
+
+#include "log.h"
+
 /**
  * @brief Macro to mark an argument as unused to avoid compiler warnings.
  *
@@ -31,7 +35,7 @@
 #define CHECK_RANGE(val, min, max, str)                                                            \
 	do {                                                                                       \
 		if ((val) < (min) || (val) > (max)) {                                              \
-			printf(str);                                                               \
+			log_err(LOG_MODULE, str);                                                               \
 			return;                                                                    \
 		}                                                                                  \
 	} while (0)

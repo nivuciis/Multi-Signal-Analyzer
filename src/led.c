@@ -11,12 +11,15 @@
  *******************************************************************/
 #include "blink.pio.h"
 #include "led.h"
+#include "log.h"
 #include "macros.h"
 
 #include <stdio.h>
 
 #include <hardware/gpio.h>
 #include <hardware/pio.h>
+
+#define LED_MODULE "led"
 
 #define MSG_INVALID_STATUS "Invalid LED status!\n"
 
@@ -68,6 +71,8 @@ static void led_capturing(void)
 
 void ana_led_init(void)
 {
+	log_inf(LED_MODULE, "Initializing LED control system...");
+
 	gpio_init(LED_USB_PIN);
 	gpio_set_dir(LED_USB_PIN, GPIO_OUT);
 	gpio_set_function(LED_USB_PIN, GPIO_FUNC_SIO);

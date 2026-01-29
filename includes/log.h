@@ -16,6 +16,7 @@
 /**
  * @brief Log an informational message
  *
+ * @param module The module name
  * @param fmt The format string
  * @param ... Additional arguments
  */
@@ -24,6 +25,7 @@ void log_inf(char* module, const char *fmt, ...);
 /**
  * @brief Log an error message
  *
+ * @param module The module name
  * @param fmt The format string
  * @param ... Additional arguments
  */
@@ -32,6 +34,7 @@ void log_err(char* module, const char *fmt, ...);
 /**
  * @brief Log a warning message
  *
+ * @param module The module name
  * @param fmt The format string
  * @param ... Additional arguments
  */
@@ -40,6 +43,7 @@ void log_warn(char* module, const char *fmt, ...);
 /**
  * @brief Log a debug message
  *
+ * @param module The module name
  * @param fmt The format string
  * @param ... Additional arguments
  */

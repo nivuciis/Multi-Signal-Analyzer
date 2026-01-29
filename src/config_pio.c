@@ -24,7 +24,6 @@
 #include <hardware/pio.h>
 #include <pico/error.h>
 
-
 void ana_config_pio_init(struct ana_config_system *config)
 {
 	log_debug(config->module.name, "Initializing PIO...");
@@ -61,7 +60,7 @@ void ana_config_pio_init(struct ana_config_system *config)
 	sm_config_set_in_pins(&sm_cfg, config->module.pin_base);
 	sm_config_set_in_shift(&sm_cfg, false, true, config->module.pin_count);
 
-	float clkdiv = clock_get_hz(clk_sys) / 10000.0f;
+	float clkdiv = clock_get_hz(clk_sys) / (float)config->module.sample_rate_hz;
 	sm_config_set_clkdiv(&sm_cfg, clkdiv);
 
 	sm_config_set_fifo_join(&sm_cfg, PIO_FIFO_JOIN_RX);
@@ -83,10 +82,6 @@ void ana_config_pio_dma_init(struct ana_config_system *config)
 	channel_config_set_transfer_data_size(&config->dma.instance_cfg, DMA_SIZE_16);
 	channel_config_set_dreq(&config->dma.instance_cfg,
 				pio_get_dreq(config->pio.instance, config->pio.sm, false));
-
-	dma_channel_configure(config->dma.instance, &config->dma.instance_cfg,
-			      config->dma.dma_buffer, &config->pio.instance->rxf[config->pio.sm],
-			      config->module.samples, false);
 }
 
 void ana_config_pio_dma_start(struct ana_config_system *config)
@@ -150,6 +145,7 @@ void ana_config_pio_get_data(struct ana_config_system *config)
 	pio_sm_set_enabled(config->pio.instance, config->pio.sm, true);
 	dma_channel_wait_for_finish_blocking(config->dma.instance);
 	pio_sm_set_enabled(config->pio.instance, config->pio.sm, false);
+
 	log_debug(config->module.name, "DMA transfer finished");
 
 	if (dma_channel_is_busy(config->dma.instance)) {
@@ -184,7 +180,8 @@ void ana_config_pio_print_data(struct ana_config_system *config)
 		return;
 	}
 
-	log_debug(config->module.name, "GPIO Data (each column is a pin, left-to-right = pin_map[0]..pin_map[n-1]):");
+	log_debug(config->module.name,
+		  "GPIO Data (each column is a pin, left-to-right = pin_map[0]..pin_map[n-1]):");
 	printf("Pins:   ");
 	for (uint i = 0; i < config->module.pin_count; i++) {
 		printf("%3u", config->module.pin_base + i);
@@ -263,4 +260,78 @@ void ana_config_pio_test_pio_direct(struct ana_config_system *config)
 uint16_t *ana_config_pio_get_buffer(struct ana_config_system *config)
 {
 	return config->dma.dma_buffer;
+}
+
+void ana_config_pio_diagnose(struct ana_config_system *config)
+{
+	log_debug(config->module.name, "=== DIAGNOSTICO PIO/DMA ===");
+
+	// 1. Verificar configuração do PIO
+	log_debug(config->module.name, "PIO Instance: %p", config->pio.instance);
+	log_debug(config->module.name, "PIO SM: %d", config->pio.sm);
+	log_debug(config->module.name, "PIO Offset: 0x%04X", config->pio.pio_offset);
+
+	// 2. Verificar configuração do módulo
+	log_debug(config->module.name, "Pin Base: %d", config->module.pin_base);
+	log_debug(config->module.name, "Pin Count: %d", config->module.pin_count);
+	log_debug(config->module.name, "Samples: %d", config->module.samples);
+	log_debug(config->module.name, "Sample Rate: %u Hz", config->module.sample_rate_hz);
+
+	// 3. Verificar se os pinos estão configurados corretamente
+	log_debug(config->module.name, "Verificando configuração dos pinos:");
+	for (int i = 0; i < config->module.pin_count; i++) {
+		int pin = config->module.pin_base + i;
+		uint func = gpio_get_function(pin);
+		const char *func_str = "UNKNOWN";
+		switch (func) {
+		case GPIO_FUNC_SPI:
+			func_str = "SPI";
+			break;
+		case GPIO_FUNC_UART:
+			func_str = "UART";
+			break;
+		case GPIO_FUNC_I2C:
+			func_str = "I2C";
+			break;
+		case GPIO_FUNC_PWM:
+			func_str = "PWM";
+			break;
+		case GPIO_FUNC_SIO:
+			func_str = "SIO";
+			break;
+		case GPIO_FUNC_PIO0:
+			func_str = "PIO0";
+			break;
+		case GPIO_FUNC_PIO1:
+			func_str = "PIO1";
+			break;
+		case GPIO_FUNC_GPCK:
+			func_str = "GPCK";
+			break;
+		case GPIO_FUNC_USB:
+			func_str = "USB";
+			break;
+		case GPIO_FUNC_NULL:
+			func_str = "NULL";
+			break;
+		}
+		bool level = gpio_get(pin);
+		log_debug(config->module.name, "  GPIO %d: Func=%s, Level=%d", pin, func_str,
+			  level);
+	}
+
+	// 4. Verificar registradores do PIO diretamente
+	pio_sm_hw_t *sm = &config->pio.instance->sm[config->pio.sm];
+	log_debug(config->module.name, "PIO SM Registers:");
+	log_debug(config->module.name, "  CLKDIV: 0x%08X", sm->clkdiv);
+	log_debug(config->module.name, "  EXECCTRL: 0x%08X", sm->execctrl);
+	log_debug(config->module.name, "  SHIFTCTRL: 0x%08X", sm->shiftctrl);
+	log_debug(config->module.name, "  PINCTRL: 0x%08X", sm->pinctrl);
+	log_debug(config->module.name, "  ADDR: 0x%02X", sm->addr);
+
+	// 5. Verificar DMA
+	log_debug(config->module.name, "DMA Channel: %d", config->dma.instance);
+	log_debug(config->module.name, "DMA Buffer: %p", config->dma.dma_buffer);
+
+	log_debug(config->module.name, "=== FIM DIAGNOSTICO ===");
 }

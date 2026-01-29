@@ -81,6 +81,7 @@ void ana_gpios_init(void)
 	gpio.module.samples = GPIO_SAMPLES;
 	gpio.module.pin_base = GPIOS_PIN_BASE;
 	gpio.module.pin_count = GPIOS_PIN_COUNT;
+	gpio.module.sample_rate_hz = 125000; /* 125 kHz */
 	memcpy(gpio.module.name, GPIO_MODULE_NAME, sizeof(GPIO_MODULE_NAME));
 
 	ana_config_pio_init(&gpio);

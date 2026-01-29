@@ -22,7 +22,7 @@ struct ana_config_modulo {
 	uint pin_base;                             /**< Base GPIO pin number */
 	uint pin_count;                            /**< Number of GPIO pins */
 	uint samples;                              /**< Number of samples */
-	float sample_rate_hz;                      /**< Sample rate in Hz */
+	uint32_t sample_rate_hz;                      /**< Sample rate in Hz */
 };
 
 /**
@@ -137,5 +137,7 @@ void ana_config_pio_test_pio_direct(struct ana_config_system *config);
  * @param config Structure referencing the module configuration
  */
 uint16_t *ana_config_pio_get_buffer(struct ana_config_system *config);
+
+void ana_config_pio_diagnose(struct ana_config_system *config);
 
 #endif

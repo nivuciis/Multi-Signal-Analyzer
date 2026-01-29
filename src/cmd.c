@@ -73,6 +73,7 @@ static void cmd_can_test(void)
 static void cmd_gpios_test(void)
 {
 	_test(ana_gpios_get_config());
+	ana_config_pio_diagnose(ana_gpios_get_config());
 }
 
 static void cmd_led_test(void)

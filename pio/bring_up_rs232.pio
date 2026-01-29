@@ -11,7 +11,7 @@
 .wrap_target
 LOOP:
    in pins, 2
-   push block
+   in null, 14 ; 16 bits (2 from pins + 14 null)
    jmp LOOP 
 .wrap
 

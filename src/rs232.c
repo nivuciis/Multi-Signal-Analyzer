@@ -56,6 +56,7 @@ void ana_rs232_init(void)
 {
 	log_inf(RS232_MODULE_NAME, "Initializing...");
 
+	rs232.pio.instance = pio0;
 	rs232.pio.pio_program = &bring_up_rs232_program;
 	rs232.pio.get_default_cfg_func = bring_up_rs232_program_get_default_config;
 

@@ -56,6 +56,7 @@ void ana_can_init(void)
 {
 	log_inf(CAN_MODULE_NAME, "Initializing...");
 
+	can.pio.instance = pio0;
 	can.pio.pio_program = &bring_up_can_program;
 	can.pio.get_default_cfg_func = bring_up_can_program_get_default_config;
 

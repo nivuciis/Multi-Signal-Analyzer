@@ -24,6 +24,7 @@ enum ana_cmd_code {
 	ANA_CMD_LED,         /**< LED command to test */
 	ANA_CMD_RS232,       /**< RS232 command to test */
 	ANA_CMD_RS485,       /**< RS484 command to test */
+	ANA_CMD_PWM,         /**< PWM command to test */
 	_ANA_CMD_AMOUNT,     /**< Amount of commands available */
 };
 

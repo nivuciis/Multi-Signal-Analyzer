@@ -30,7 +30,6 @@ void ana_config_pio_init(struct ana_config_system *config)
 
 	int pin;
 
-	config->pio.instance = pio0;
 	config->pio.sm = pio_claim_unused_sm(config->pio.instance, true);
 
 	config->dma.has_complete = false;

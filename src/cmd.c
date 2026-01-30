@@ -17,6 +17,7 @@
 #include "led.h"
 #include "rs232.h"
 #include "rs485.h"
+#include "pwm.h"
 
 #include <stdio.h>
 
@@ -107,11 +108,16 @@ static void cmd_rs485_test(void)
 	_test(ana_rs485_get_config());
 }
 
+static void cmd_pwm_test(void)
+{
+	ana_pwm_measure_input_capture();
+}
+
 static const cmd cmd_list[_ANA_CMD_AMOUNT] = {
 	[ANA_CMD_NONE] = {cmd_none},        [ANA_CMD_ADC] = {cmd_adc_test},
 	[ANA_CMD_CAN] = {cmd_can_test},     [ANA_CMD_GPIOS] = {cmd_gpios_test},
 	[ANA_CMD_LED] = {cmd_led_test},     [ANA_CMD_RS232] = {cmd_rs232_test},
-	[ANA_CMD_RS485] = {cmd_rs485_test},
+	[ANA_CMD_RS485] = {cmd_rs485_test}, [ANA_CMD_PWM] = {cmd_pwm_test},
 };
 
 void ana_cmd_process(enum ana_cmd_code code_cmd)

@@ -64,6 +64,7 @@ void ana_gpios_init(void)
 {
 	log_inf(GPIO_MODULE_NAME, "Initializing...");
 
+	gpio.pio.instance = pio1;
 	gpio.pio.pio_program = &bring_up_gpios_program;
 	gpio.pio.get_default_cfg_func = bring_up_gpios_program_get_default_config;
 

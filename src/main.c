@@ -15,9 +15,10 @@
 #include "cmd.h"
 #include "gpios.h"
 #include "led.h"
+#include "log.h"
+#include "pwm.h"
 #include "rs232.h"
 #include "rs485.h"
-#include "log.h"
 
 #include <stdbool.h>
 #include <stdio.h>
@@ -52,6 +53,7 @@ static void _cmd_table()
 	log_inf("main", "0x04 - LED Test");
 	log_inf("main", "0x05 - RS232 Test");
 	log_inf("main", "0x06 - RS485 Test\n");
+	log_inf("main", "0x07 - PWM Test");
 }
 
 int main()
@@ -69,6 +71,7 @@ int main()
 	ana_led_init();
 	ana_rs232_init();
 	ana_rs485_init();
+	ana_pwm_init();
 
 	_cmd_table();
 

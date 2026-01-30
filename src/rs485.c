@@ -56,6 +56,7 @@ void ana_rs485_init(void)
 {
 	log_inf(RS485_MODULE_NAME, "Initializing...");
 
+	rs485.pio.instance = pio0;
 	rs485.pio.pio_program = &bring_up_rs485_program;
 	rs485.pio.get_default_cfg_func = bring_up_rs485_program_get_default_config;
 

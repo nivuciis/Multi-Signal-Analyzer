@@ -41,15 +41,18 @@
 #define GET_ANALOG_SCALE_CMD 'a'
 
 /**
- * @brief Set analog channels
- *  
- * @note The received message is Axyy where x is 0 for disabled, 1 for enabled and yy is the specified channel
+ * @brief Enable/Disable analog channels
+ *
+ * @note The received message is Axyy where x is 0 for disabled, 1 for enabled and yy is the
+ * specified channel
  */
 #define SET_ANALOG_CHANNEL_CMD 'A'
 
 /**
- * @brief Set digital channel
+ * @brief Enable/Disable digital channels
  *
+ * @note The received message is Dxyy where x is 0 for disabled, 1 for enabled and yy is the
+ * specified channel
  */
 #define SET_DIGITAL_CHANNEL_CMD 'D'
 

@@ -29,16 +29,6 @@ static void sync_led_with_usb_connnection()
 	ana_led_set_status((is_usb_connected) ? LED_STATUS_CONNECTED : LED_STATUS_OFF);
 }
 
-/**
- * @brief Callback function for handling received data over USB CDC
- *
- * @param msg The received message
- */
-void tud_cdc_rx_cb(uint8_t msg)
-{
-	(void)msg;
-}
-
 int main()
 {
 	ana_led_init();
@@ -61,7 +51,7 @@ int main()
 			}
 		}
 
-		if (to_ms_since_boot(get_absolute_time()) - led_timer > 100) {
+		if (to_ms_since_boot(get_absolute_time()) - led_timer > 30) {
 			led_timer = to_ms_since_boot(get_absolute_time());
 			sync_led_with_usb_connnection();
 		}

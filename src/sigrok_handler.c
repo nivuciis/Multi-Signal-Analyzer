@@ -32,7 +32,7 @@ static uint16_t digital_mask = 0xFFFF;
 static int digital_bits_per_transfer = 2;
 
 static char cmd_str[32];
-static int cmd_str_pointer = 0;
+static int cmd_str_index = 0;
 
 extern uint16_t digital_capture_buffer[];
 extern uint8_t analog_capture_buffer[];
@@ -136,7 +136,7 @@ static void ana_send_packet_channels(void)
 
 void sigrok_init(void)
 {
-	cmd_str_pointer = 0;
+	cmd_str_index = 0;
 	memset(cmd_str, 0, sizeof(cmd_str));
 }
 
@@ -152,7 +152,7 @@ void sigrok_process_byte(uint8_t received_command)
 	}
 
 	if (received_command == '\r' || received_command == '\n') {
-		cmd_str[cmd_str_pointer] = '\0';
+		cmd_str[cmd_str_index] = '\0';
 
 		strcpy(response, "*");
 
@@ -233,13 +233,13 @@ void sigrok_process_byte(uint8_t received_command)
 			ana_send_response(response);
 		}
 
-		cmd_str_pointer = 0;
+		cmd_str_index = 0;
 	} else {
-		if (cmd_str_pointer < 31) {
-			cmd_str[cmd_str_pointer] = (char)received_command;
-			cmd_str_pointer += 1;
+		if (cmd_str_index < 31) {
+			cmd_str[cmd_str_index] = (char)received_command;
+			cmd_str_index += 1;
 		} else {
-			cmd_str_pointer = 0;
+			cmd_str_index = 0;
 		}
 	}
 }

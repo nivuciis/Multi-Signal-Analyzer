@@ -73,13 +73,13 @@ int ana_capture_init()
 
 int ana_get_analog_channels_count(uint8_t analog_mask)
 {
-	int count = 0;
+	int enabled_analog_channel_count = 0;
 	for (int i = 0; i < 3; i++) {
 		if (analog_mask & (1 << i)) {
-			count++;
+			enabled_analog_channel_count++;
 		}
 	}
-	return count;
+	return enabled_analog_channel_count;
 }
 
 /**

@@ -6,7 +6,7 @@
  * @version 0.1
  * @date 07/01/2026
  *
- * @copyright Copyright (c) 2026
+ * @copyright Copyright (c) 2025
  *
  *******************************************************************/
 
@@ -41,8 +41,8 @@
 	} while (0)
 
 /**
- * @brief Macro to enable overclocking.
- *
+ * @brief Enable or disable overclocking feature.
+ * 
  */
 #define ENABLE_OVERCLOCKING false
 

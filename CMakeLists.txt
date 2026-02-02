@@ -82,6 +82,8 @@ target_link_libraries(multi_signal_analyzer
 pico_enable_stdio_usb(multi_signal_analyzer 0)  
 # Add the standard include files to the build
 target_include_directories(multi_signal_analyzer PRIVATE
+        ${INCLUDE_DIRS}
+        ${SOURCE_DIRS}
         ${CMAKE_CURRENT_LIST_DIR}
 )
 

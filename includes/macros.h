@@ -18,6 +18,12 @@
 #include "log.h"
 
 /**
+ * @brief Enable or disable overclocking feature.
+ * 
+ */
+#define ENABLE_OVERCLOCKING false
+
+/**
  * @brief Macro to mark an argument as unused to avoid compiler warnings.
  *
  * @param x The unused argument.
@@ -39,11 +45,5 @@
 			return;                                                                    \
 		}                                                                                  \
 	} while (0)
-
-/**
- * @brief Enable or disable overclocking feature.
- * 
- */
-#define ENABLE_OVERCLOCKING false
 
 #endif /* MACROS_H */

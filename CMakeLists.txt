@@ -73,6 +73,7 @@ target_link_libraries(multi_signal_analyzer
             hardware_adc
             hardware_vreg
             hardware_clocks
+            hardware_timer
             pico_stdlib
             tinyusb_device
             tinyusb_board

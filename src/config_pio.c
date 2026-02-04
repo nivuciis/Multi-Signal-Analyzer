@@ -42,13 +42,6 @@ void ana_config_pio_init(struct ana_config_system *config)
 		pin = config->module.pin_base + i;
 		pio_gpio_init(config->pio.instance, pin);
 		gpio_pull_down(pin);
-		// //_REG_(PADS_BANK0_BASE + (pin*4) &= 1u<<3);
-		// io_rw_32 *pads_reg = (io_rw_32 *)(PADS_BANK0_BASE + (pin * 4));
-		// *pads_reg &= ~(1u << 3);
-		// asm volatile("nop");
-		// *pads_reg &= (1u << 2);
-		// asm volatile("nop");
-		// asm volatile("nop");
 	}
 
 	pio_sm_set_consecutive_pindirs(config->pio.instance, config->pio.sm,

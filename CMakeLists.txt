@@ -72,6 +72,7 @@ target_link_libraries(multi_signal_analyzer
             hardware_adc
             pico_stdlib
             pico_stdio_usb
+            pico_multicore
         )
 
 #Enables USB output

@@ -15,6 +15,7 @@
 #include "cmd.h"
 #include "gpios.h"
 #include "led.h"
+#include "log.h"
 #include "rs232.h"
 #include "rs485.h"
 #include "pwm.h"
@@ -22,6 +23,7 @@
 #include <stdio.h>
 
 #include <pico/time.h>
+#include <pico/multicore.h>
 
 static enum ana_cmd_code last_cmd = ANA_CMD_NONE;
 
@@ -110,7 +112,14 @@ static void cmd_rs485_test(void)
 
 static void cmd_pwm_test(void)
 {
-	ana_pwm_measure_input_capture();
+	if(multicore_fifo_wready()){
+		multicore_fifo_push_blocking_inline(PWM_START_FLAG);
+		ana_pwm_measure_input_capture();
+	}
+	else{
+		log_err("test - cmd", "Multicore FIFO not ready to receive data");
+	}
+
 }
 
 static const cmd cmd_list[_ANA_CMD_AMOUNT] = {

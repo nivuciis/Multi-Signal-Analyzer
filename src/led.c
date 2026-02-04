@@ -95,7 +95,7 @@ static const led_cmd led_op[_LED_STATUS_AMOUNT] = {
 void ana_led_set_status(enum led_status status)
 {
 	CHECK_RANGE(status, LED_STATUS_OFF, _LED_STATUS_AMOUNT, MSG_INVALID_STATUS);
-	led_op[status].execute();
+	// led_op[status].execute();PI
 	current_status = status;
 	return;
 }

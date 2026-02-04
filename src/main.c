@@ -23,6 +23,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 
+#include <pico/multicore.h>
 #include <pico/stdio_usb.h>
 #include <pico/time.h>
 
@@ -52,15 +53,20 @@ static void _cmd_table()
 	log_inf("main", "0x03 - GPIOS Test");
 	log_inf("main", "0x04 - LED Test");
 	log_inf("main", "0x05 - RS232 Test");
-	log_inf("main", "0x06 - RS485 Test\n");
+	log_inf("main", "0x06 - RS485 Test");
 	log_inf("main", "0x07 - PWM Test");
+	printf("\n");
 }
 
 int main()
 {
 	enum ana_cmd_code cmd;
+	uint level = 1;
+	int dt = 1;
 
 	stdio_init_all();
+	multicore_reset_core1();
+	multicore_launch_core1(ana_pwm_generate);
 
 	sleep_ms(500);
 

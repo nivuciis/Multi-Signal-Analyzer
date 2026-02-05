@@ -9,8 +9,8 @@
  * @copyright Copyright (c) 2026
  *
  *******************************************************************/
-#include "module.h"
 #include "log.h"
+#include "module.h"
 
 void ana_module_pio_init(struct ana_module_system *config)
 {
@@ -33,7 +33,6 @@ void ana_module_pio_init(struct ana_module_system *config)
 
 	pio_sm_set_consecutive_pindirs(config->pio.instance, config->pio.sm,
 				       config->module.pin_base, config->module.pin_count, false);
-                       
 	sm_config_set_wrap(&sm_cfg, config->pio.pio_offset,
 			   config->pio.pio_offset + config->pio.pio_program->length - 1);
 	sm_config_set_in_pins(&sm_cfg, config->module.pin_base);
@@ -49,7 +48,7 @@ void ana_module_pio_init(struct ana_module_system *config)
 	pio_sm_set_enabled(config->pio.instance, config->pio.sm, false);
 }
 
-void ana_module_pio_dma_init(struct ana_module_system *config)
+void ana_module_dma_init(struct ana_module_system *config)
 {
 	log_debug(config->module.name, "Initializing DMA...");
 

@@ -81,12 +81,12 @@ struct ana_module_system {
 /**
  * @brief Initialize the PIO configuration
  *
- * @param config Structure referencing the PIO program and DMA configuration
+ * @param config Structure referencing the module configuration
  */
 void ana_module_pio_init(struct ana_module_system *config);
 
 /**
- * @brief Initialize the DMA configuration for the PIO program
+ * @brief Initialize the DMA configuration
  *
  * @param config Structure referencing the module configuration
  */

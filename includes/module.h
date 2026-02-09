@@ -28,19 +28,17 @@
 #include <pico/time.h>
 #include <pico/types.h>
 
-#define ANA_CONFIG_MODULE_NAME_MAX_LEN 8
-
 /**
  * @brief Configuration structure for each module
  *
  */
 struct ana_module_config {
-	char name[ANA_CONFIG_MODULE_NAME_MAX_LEN]; /**< Name of the module */
-	uint pin_base;                             /**< Base GPIO pin number */
-	uint pin_count;                            /**< Number of GPIO pins */
-	uint samples;                              /**< Number of samples */
-	uint16_t mask;                             /**< Pin mask to sump protocol*/
-	uint32_t sample_rate_hz;                   /**< Sample rate in Hz */
+	char *name;              /**< Name of the module */
+	uint pin_base;           /**< Base GPIO pin number */
+	uint pin_count;          /**< Number of GPIO pins */
+	uint samples;            /**< Number of samples */
+	uint16_t mask;           /**< Pin mask to sump protocol*/
+	uint32_t sample_rate_hz; /**< Sample rate in Hz */
 };
 
 /**

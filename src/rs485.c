@@ -72,8 +72,8 @@ void ana_rs485_init(void)
 
 	rs485.dma.dma_buffer = dma_rs485_buffer;
 	rs485.module.samples = RS485_SAMPLES;
-	rs485.module.pin_base = RS485_GPIO_PIN_BASE;
-	rs485.module.pin_count = RS485_PIN_COUNT;
+	rs485.module.pin_base = PICO_DEFAULT_RS485_PIN_BASE;
+	rs485.module.pin_count = PICO_DEFAULT_RS485_PIN_COUNT;
 	memcpy(rs485.module.name, RS485_MODULE_NAME, sizeof(RS485_MODULE_NAME));
 
 	ana_config_pio_init(&rs485);

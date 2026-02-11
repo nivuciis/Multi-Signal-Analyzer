@@ -30,26 +30,6 @@ static int dma_adc_chan;
 #define ADC_NUM_CHANNELS 3
 
 /**
- * @brief GPIO pin for ADC associated to channel 1
- * 
- */
-#define ADC_CHAN1_GPIO_PIN 26
-
-/**
- * @brief GPIO pin for ADC associated to channel 2
- * 
- */
-#define ADC_CHAN2_GPIO_PIN 27
-
-/**
- * @brief GPIO pin for ADC associated to channel 3
- * 
- */
-#define ADC_CHAN3_GPIO_PIN 28
-
-
-
-/**
  * @brief Initialize the ADC system.
  * 
  */

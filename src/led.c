@@ -30,13 +30,7 @@ static enum led_status current_status = LED_STATUS_OFF;
 
 static void set_led_pin_to_sio(void)
 {
-	gpio_set_function(LED_USB_PIN, GPIO_FUNC_SIO);
-	return;
-}
-
-static void set_led_pin_to_pio(void)
-{
-	pio_gpio_init(pio_instance, LED_USB_PIN);
+	gpio_set_function(PICO_DEFAULT_LED_PIN, GPIO_FUNC_SIO);
 	return;
 }
 
@@ -44,8 +38,7 @@ static void led_reset(void)
 {
 	pio_sm_set_enabled(pio_instance, sm, false);
 	set_led_pin_to_sio();
-	gpio_put(LED_BLINK_PIN, 0);
-	gpio_put(LED_USB_PIN, 0);
+	gpio_put(PICO_DEFAULT_LED_PIN, 0);
 	return;
 }
 
@@ -53,34 +46,21 @@ static void led_connected(void)
 {
 	pio_sm_set_enabled(pio_instance, sm, false);
 	set_led_pin_to_sio();
-	gpio_put(LED_BLINK_PIN, 0);
-	gpio_put(LED_USB_PIN, 1);
+	gpio_put(PICO_DEFAULT_LED_PIN, 1);
 	return;
 }
 
 static void led_capturing(void)
 {
-	set_led_pin_to_pio();
-	gpio_put(LED_BLINK_PIN, 1);
+	set_led_pin_to_sio();
+	gpio_put(PICO_DEFAULT_LED_PIN, 1);
 	pio_sm_set_enabled(pio_instance, sm, true);
 	return;
 }
 
 void ana_led_init(void)
 {
-	gpio_init(LED_USB_PIN);
-	gpio_set_dir(LED_USB_PIN, GPIO_OUT);
-	gpio_set_function(LED_USB_PIN, GPIO_FUNC_SIO);
-
-	gpio_init(LED_BLINK_PIN);
-	gpio_set_dir(LED_BLINK_PIN, GPIO_OUT);
-	gpio_set_function(LED_BLINK_PIN, GPIO_FUNC_SIO);
-	uint offset = pio_add_program(pio_instance, &blink_gated_program);
-	blink_gated_program_init(pio_instance, sm, offset, LED_USB_PIN, LED_BLINK_PIN);
-	gpio_set_function(LED_BLINK_PIN, GPIO_FUNC_SIO);
-
-	pio_sm_put_blocking(pio_instance, sm, 30000000);
-	pio_sm_set_enabled(pio_instance, sm, true);
+	blink_init(pio_instance, sm, PICO_DEFAULT_LED_PIN);
 
 	ana_led_set_status(LED_STATUS_CONNECTED);
 }
@@ -95,7 +75,7 @@ static const led_cmd led_op[_LED_STATUS_AMOUNT] = {
 void ana_led_set_status(enum led_status status)
 {
 	CHECK_RANGE(status, LED_STATUS_OFF, _LED_STATUS_AMOUNT, MSG_INVALID_STATUS);
-	// led_op[status].execute();PI
+	led_op[status].execute();
 	current_status = status;
 	return;
 }

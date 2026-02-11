@@ -18,8 +18,6 @@
 #include <string.h>
 
 #define RS485_SAMPLES       256
-#define RS485_GPIO_PIN_BASE 24
-#define RS485_PIN_COUNT     2
 #define RS232_MODULE_NAME   "RS232"
 
 static struct ana_config_system rs232;
@@ -72,8 +70,8 @@ void ana_rs232_init(void)
 
 	rs232.dma.dma_buffer = dma_rs232_buffer;
 	rs232.module.samples = RS485_SAMPLES;
-	rs232.module.pin_base = RS485_GPIO_PIN_BASE;
-	rs232.module.pin_count = RS485_PIN_COUNT;
+	rs232.module.pin_base = PICO_DEFAULT_RS232_PIN_BASE;
+	rs232.module.pin_count = PICO_DEFAULT_RS232_PIN_COUNT;
 	memcpy(rs232.module.name, RS232_MODULE_NAME, sizeof(RS232_MODULE_NAME));
 
 	ana_config_pio_init(&rs232);

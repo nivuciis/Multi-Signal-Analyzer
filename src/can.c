@@ -18,8 +18,6 @@
 #include <string.h>
 
 #define CAN_SAMPLES       256
-#define CAN_GPIO_PIN_BASE 35
-#define CAN_PIN_COUNT     1
 #define CAN_MODULE_NAME   "CAN"
 
 static struct ana_config_system can;
@@ -72,8 +70,8 @@ void ana_can_init(void)
 
 	can.dma.dma_buffer = dma_can_buffer;
 	can.module.samples = CAN_SAMPLES;
-	can.module.pin_base = CAN_GPIO_PIN_BASE;
-	can.module.pin_count = CAN_PIN_COUNT;
+	can.module.pin_base = PICO_DEFAULT_CAN_PIN_BASE;
+	can.module.pin_count = PICO_DEFAULT_CAN_PIN_COUNT;
 	memcpy(can.module.name, CAN_MODULE_NAME, sizeof(CAN_MODULE_NAME));
 
 	ana_config_pio_init(&can);

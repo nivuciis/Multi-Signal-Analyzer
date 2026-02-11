@@ -83,9 +83,9 @@ void ana_adc_read_multiple_channels(double *rsp1, double *rsp2, double *rsp3, ui
 	adc_run(true);
 
 	for (uint16_t i = 0; i < samples; i++) {
-		ana_adc_read_single_channel(rsp1 + i, ADC_CHAN1_GPIO_PIN);
-		ana_adc_read_single_channel(rsp2 + i, ADC_CHAN2_GPIO_PIN);
-		ana_adc_read_single_channel(rsp3 + i, ADC_CHAN3_GPIO_PIN);
+		ana_adc_read_single_channel(rsp1 + i, PICO_DEFAULT_ADC_CHANNEL_1);
+		ana_adc_read_single_channel(rsp2 + i, PICO_DEFAULT_ADC_CHANNEL_2);
+		ana_adc_read_single_channel(rsp3 + i, PICO_DEFAULT_ADC_CHANNEL_3);
 	}
 
 	adc_run(false);
@@ -97,9 +97,9 @@ void ana_adc_init(void)
 
 	adc_init();
 
-	adc_gpio_init(ADC_CHAN1_GPIO_PIN);
-	adc_gpio_init(ADC_CHAN2_GPIO_PIN);
-	adc_gpio_init(ADC_CHAN3_GPIO_PIN);
+	adc_gpio_init(PICO_DEFAULT_ADC_CHANNEL_1);
+	adc_gpio_init(PICO_DEFAULT_ADC_CHANNEL_2);
+	adc_gpio_init(PICO_DEFAULT_ADC_CHANNEL_3);
 
 	adc_run(false);
 }

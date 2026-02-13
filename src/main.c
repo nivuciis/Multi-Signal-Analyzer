@@ -26,6 +26,7 @@
 #include <pico/multicore.h>
 #include <pico/stdio_usb.h>
 #include <pico/time.h>
+#include <pico/types.h>
 
 static bool is_usb_connected = false;
 
@@ -35,27 +36,13 @@ static void sync_led_with_usb_connection()
 	ana_led_set_status((is_usb_connected) ? LED_STATUS_CONNECTED : LED_STATUS_OFF);
 }
 
-static enum ana_cmd_code get_cmd_by_serial(void)
+static int get_cmd_by_serial(void)
 {
 	int cmd = getchar_timeout_us(1000);
 	if (cmd != PICO_ERROR_TIMEOUT) {
 		return cmd;
 	}
-	return ANA_CMD_NONE;
-}
-
-static void _cmd_table()
-{
-	printf("\n \tMulti-Signal Analyzer - Command Table\n");
-	log_inf("main", "0x00 - Reserved");
-	log_inf("main", "0x01 - ADC Test");
-	log_inf("main", "0x02 - CAN Test");
-	log_inf("main", "0x03 - GPIOS Test");
-	log_inf("main", "0x04 - LED Test");
-	log_inf("main", "0x05 - RS232 Test");
-	log_inf("main", "0x06 - RS485 Test");
-	log_inf("main", "0x07 - PWM Test");
-	printf("\n");
+	return PICO_ERROR_TIMEOUT;
 }
 
 int main()
@@ -78,17 +65,19 @@ int main()
 	ana_rs232_init();
 	ana_rs485_init();
 	ana_pwm_init();
-
-	_cmd_table();
+	ana_cmd_table();
 
 	while (1) {
 		sync_led_with_usb_connection();
 
 		if (is_usb_connected) {
 			cmd = get_cmd_by_serial();
-			if (cmd != 0) {
+			if (cmd >= 0 && cmd < _ANA_CMD_AMOUNT) {
 				ana_cmd_process(cmd);
+			}else {
+				log_debug("main", "Command ignored [cmd]: %d", cmd);
 			}
+			
 		}
 		sleep_ms(30);
 	}

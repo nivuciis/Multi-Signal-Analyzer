@@ -26,7 +26,7 @@
 #include <pico/types.h>
 
 #define GPIO_SAMPLES    256
-#define GPIOS_PIN_BASE  9
+#define GPIOS_PIN_BASE  8
 #define GPIOS_PIN_COUNT 12
 #define GPIO_MODULE_NAME "GPIOS"
 

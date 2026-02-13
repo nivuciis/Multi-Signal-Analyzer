@@ -40,11 +40,11 @@
  * - input adc 7 --> GPIO 47
  */
 #define ADC_BASE_SUBTRAVTIC 40
-/** 
-* #define ADC_BASE_SUBTRAVTIC 26
-* 
-* @note: used in ana_adc_read_single_channel() for tests at rp2040
-*/
+/**
+ * #define ADC_BASE_SUBTRAVTIC 26
+ *
+ * @note: used in ana_adc_read_single_channel() for tests at rp2040
+ */
 
 /**
  * @brief Mask for ADC channels reading.
@@ -52,13 +52,24 @@
  */
 #define ADC_CHANNELS_MASK 0x07
 
+#if PICO_DEFAULT_ADC_VOLTAGE_DIVIDER
+static const double ADC_VOLTAGE_DIVIDER_R1 = 300000.0; /* Resistor R1 value in ohms */
+static const double ADC_VOLTAGE_DIVIDER_R2 = 100000.0; /* Resistor R2 value in ohms */
+#else
+static const double ADC_VOLTAGE_DIVIDER_R1 = 0.0; /* Resistor R1 value in ohms */
+static const double ADC_VOLTAGE_DIVIDER_R2 = 1.0; /* Resistor R2 value in ohms */
+#endif
+
+#define ADC_VOLTAGE_DIVIDER_FACTOR                                                                 \
+	((ADC_VOLTAGE_DIVIDER_R1 + ADC_VOLTAGE_DIVIDER_R2) / ADC_VOLTAGE_DIVIDER_R2)
+
 /**
  * @brief Conversion factor for ADC readings to voltage.
  *
  * @note At the project the power of ADC CI is 3v3 and it has 12 bits of resolution.
- * Thus, the conversion factor is calculated as 3.3 / (2^12).
+ * Thus, the conversion factor is calculated as 3.3 / (2^12) * ADC_VOLTAGE_DIVIDER_FACTOR.
  */
-static const double ADC_FACTOR_CONVERSION = 3.3f / (double)(1 << 12);
+static const double ADC_FACTOR_CONVERSION = (3.3f / (double)(1 << 12)) * ADC_VOLTAGE_DIVIDER_FACTOR;
 
 void ana_adc_read_single_channel(double *rsp, int gpio_pin)
 {
@@ -80,7 +91,7 @@ void ana_adc_read_multiple_channels(double *rsp1, double *rsp2, double *rsp3, ui
 
 	uint16_t raw_data = 0;
 
-	adc_run(true);
+	adc_run(true); 
 
 	for (uint16_t i = 0; i < samples; i++) {
 		ana_adc_read_single_channel(rsp1 + i, PICO_DEFAULT_ADC_CHANNEL_1);

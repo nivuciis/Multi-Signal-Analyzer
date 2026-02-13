@@ -27,6 +27,7 @@
 #define PWM_GPIO_PIN_BASE 8
 #define PWM_PIN_COUNT     1
 #define PWM_MODULE_NAME   "pwm"
+#define PWM_TEST_FREQ_HZ  1000u
 
 static struct ana_config_system pwm;
 static struct _pwm_defs pwm_defs;
@@ -63,7 +64,8 @@ void ana_pwm_init(void)
 {
 	log_inf(PWM_MODULE_NAME, "Initializing...");
 
-	 uint32_t sample_rate_hz = 1000000; // 1 MHz
+	const uint32_t sample_rate_hz = 1000000; // 1 MHz
+	const uint32_t generator_period_cycles = clock_get_hz(clk_sys) / PWM_TEST_FREQ_HZ;
 
 
 	pwm.pio.instance = pio1;
@@ -76,7 +78,7 @@ void ana_pwm_init(void)
 	 * use NULL for blocking mode
 	 */
 
-	/**< rs232_config.dma_callback = rs232_capture_finished;  */
+	/**< pwm.dma_callback = rs232_capture_finished;  */
 
 	pwm.dma.callback = NULL;
 
@@ -99,8 +101,8 @@ void ana_pwm_init(void)
 	pwm_defs.sm = pio_claim_unused_sm(pwm_defs.pio, true);
 	pwm_defs.offset = pio_add_program(pwm_defs.pio, &pwm_program);
 	pwm_program_init(pwm_defs.pio,pwm_defs.sm,pwm_defs.offset,7);
-	ana_pwm_sm_set_period(&pwm_defs, sample_rate_hz); // 1 kHz
-	ana_pwm_sm_set_level(&pwm_defs, 500000);   // 50%
+	ana_pwm_sm_set_period(&pwm_defs, generator_period_cycles);
+	ana_pwm_sm_set_level(&pwm_defs, generator_period_cycles / 2u);
 
 }
 
@@ -111,112 +113,59 @@ struct ana_config_system *ana_pwm_get_config(void)
 
 void ana_pwm_measure_input_capture(void)
 {
-	struct ana_config_system *config = ana_pwm_get_config();
-	uint16_t *buffer = config->dma.dma_buffer;
-	uint32_t samples = config->module.samples;
-	float sample_rate_hz = config->module.sample_rate_hz;
+    struct ana_config_system *config = ana_pwm_get_config();
+    // Importante: Cada medida agora ocupa 1 posição no buffer.
+    // buffer[0] = High, buffer[1] = Low
+    uint32_t *buffer = (uint32_t *)config->dma.dma_buffer; 
+    uint32_t samples = config->module.samples;
+    uint32_t sys_clk = clock_get_hz(clk_sys);
 
-	uint32_t rise_edges[1000];
-	uint32_t fall_edges[1000];
-	uint32_t rise_count = 0;
-	uint32_t fall_count = 0;
-	uint32_t rise_start = 0;
-	uint32_t rise_end = 0;
-	uint32_t high_samples = 0;
-	uint32_t period_samples = 0;
-	uint32_t valid_periods = 0;
-	uint32_t valid_cycles = 0;
-	float total_period_samples = 0;
-	float total_high_time = 0;
-	float total_period_time = 0;
-	float avg_period_samples = 0;
-	float frequency_hz = 0;
-	bool last_state = (buffer[0] & 0x01);
+    float total_freq = 0;
+    float total_duty = 0;
+    uint32_t valid_pairs = 0;
 
-	log_inf(PWM_MODULE_NAME, "Iniciando medição de PWM...");
+    log_inf(PWM_MODULE_NAME, "Processando dados capturados via PIO Hardware...");
 
-	ana_config_pio_get_data(config);
+    // Dispara a captura DMA e aguarda (assumindo que ana_config_pio_get_data faça isso)
+    ana_config_pio_get_data(config); 
 
-	for (uint32_t i = 1; i < samples; i++) {
-		bool current_state = (buffer[i] & 0x01);
+    // O PIO envia pares (High e Low). Percorremos de 2 em 2.
+    // Usamos samples-1 para garantir que temos o par completo.
+    for (uint32_t i = 0; i < samples - 1; i += 2) {
+        
+        // O contador do PIO é decrescente (0xFFFFFFFF - valor)
+        // Multiplicamos por 2 porque o loop no PIO leva 2 ciclos por decremento
+        uint32_t high_cycles = (0xFFFFFFFF - buffer[i]) * 2;
+        uint32_t low_cycles = (0xFFFFFFFF - buffer[i+1]) * 2;
+        
+        uint32_t period_cycles = high_cycles + low_cycles;
 
-		if (!last_state && current_state) {
-			if (rise_count < 1000) {
-				rise_edges[rise_count++] = i;
-			}
-		} else if (last_state && !current_state) {
-			if (fall_count < 1000) {
-				fall_edges[fall_count++] = i;
-			}
-		}
+        if (period_cycles > 0) {
+            float freq = (float)sys_clk / period_cycles;
+            float duty = ((float)high_cycles / period_cycles) * 100.0f;
 
-		last_state = current_state;
-	}
+            total_freq += freq;
+            total_duty += duty;
+            valid_pairs++;
+        }
+    }
 
-	if (rise_count < 2) {
-		log_err(PWM_MODULE_NAME, "Não foram detectadas bordas de subida suficientes");
-		return;
-	}
+    if (valid_pairs == 0) {
+        log_err(PWM_MODULE_NAME, "Nenhum ciclo completo capturado");
+        return;
+    }
 
-	for (uint32_t i = 1; i < rise_count; i++) {
-		uint32_t period_samples = rise_edges[i] - rise_edges[i - 1];
-		if (period_samples > 0) {
-			total_period_samples += period_samples;
-			valid_periods++;
-		}
-	}
+    float avg_freq = total_freq / valid_pairs;
+    float avg_duty = total_duty / valid_pairs;
 
-	if (valid_periods == 0) {
-		log_err(PWM_MODULE_NAME, "Não foi possível calcular o período");
-		return;
-	}
+    printf("\n=== ANALISADOR PWM PIO (RP2350) ===\n");
+    printf("Frequência Média: %.2f Hz\n", avg_freq);
+    printf("Duty Cycle Médio: %.2f%%\n", avg_duty);
+    printf("Ciclos Analisados: %u\n", valid_pairs);
+    printf("Clock do Sistema: %u Hz\n", sys_clk);
+    printf("===================================\n");
 
-	avg_period_samples = total_period_samples / valid_periods;
-	frequency_hz = sample_rate_hz / avg_period_samples;
-
-	for (uint32_t i = 0; i < rise_count - 1; i++) {
-		rise_start = rise_edges[i];
-		rise_end = rise_edges[i + 1];
-
-		for (uint32_t j = 0; j < fall_count; j++) {
-			if (fall_edges[j] > rise_start && fall_edges[j] < rise_end) {
-				high_samples = fall_edges[j] - rise_start;
-				period_samples = rise_end - rise_start;
-				total_high_time += high_samples;
-				total_period_time += period_samples;
-				valid_cycles++;
-				break;
-			}
-		}
-	}
-
-	if (valid_cycles == 0) {
-		log_err(PWM_MODULE_NAME, "Não foi possível calcular o duty cycle");
-		return;
-	}
-
-	float avg_duty_cycle = (total_high_time / total_period_time) * 100.0f;
-
-	printf("\n=== MEDIÇÃO PWM ===\n");
-	printf("Frequência: %.2f Hz\n", frequency_hz);
-	printf("Duty Cycle: %.2f%%\n", avg_duty_cycle);
-	printf("Período: %.6f segundos\n", 1.0f / frequency_hz);
-	printf("Tempo ON: %.6f segundos\n", (1.0f / frequency_hz) * (avg_duty_cycle / 100.0f));
-	printf("Tempo OFF: %.6f segundos\n",
-	       (1.0f / frequency_hz) * ((100.0f - avg_duty_cycle) / 100.0f));
-	printf("Amostras analisadas: %u\n", samples);
-	printf("Taxa de amostragem: %.0f Hz\n", sample_rate_hz);
-	printf("===================\n");
-
-	log_inf(PWM_MODULE_NAME, "Frequência medida: %.2f Hz", frequency_hz);
-	log_inf(PWM_MODULE_NAME, "Duty Cycle medido: %.2f%%", avg_duty_cycle);
-
-	if (config->module.samples > 20) {
-		printf("\nPrimeiras 20 amostras:\n");
-		for (uint32_t i = 0; i < 20; i++) {
-			printf("Amostra[%3u]: %d\n", i, buffer[i] & 0x01);
-		}
-	}
+    log_inf(PWM_MODULE_NAME, "Frequência: %.2f Hz | Duty: %.2f%%", avg_freq, avg_duty);
 }
 
 void ana_pwm_set_sample_rate(uint32_t sample_rate_hz)
@@ -244,7 +193,9 @@ void ana_pwm_set_sample_rate(uint32_t sample_rate_hz)
 static uint32_t flag = 0;
 static void _pwm_signal_handler()
 {
-	ana_pwm_sm_set_period(&pwm_defs, 1000000);
+	uint32_t generator_period_cycles = clock_get_hz(clk_sys) / PWM_TEST_FREQ_HZ;
+	ana_pwm_sm_set_period(&pwm_defs, generator_period_cycles);
+	ana_pwm_sm_set_level(&pwm_defs, generator_period_cycles / 2u);
 }
 
 void ana_pwm_generate(void)

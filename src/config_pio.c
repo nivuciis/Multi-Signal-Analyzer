@@ -41,7 +41,7 @@ void ana_config_pio_init(struct ana_config_system *config)
 	for (int i = 0; i < config->module.pin_count; i++) {
 		pin = config->module.pin_base + i;
 		pio_gpio_init(config->pio.instance, pin);
-		gpio_pull_down(pin);
+		gpio_set_pulls(pin, false, true);
 	}
 
 	pio_sm_set_consecutive_pindirs(config->pio.instance, config->pio.sm,
@@ -174,7 +174,7 @@ void ana_config_pio_print_data(struct ana_config_system *config)
 
 	log_debug(config->module.name,
 		  "GPIO Data (each column is a pin, left-to-right = pin_map[0]..pin_map[n-1]):");
-	printf("Pins:   ");
+	printf("GPIO:   ");
 	for (uint i = 0; i < config->module.pin_count; i++) {
 		printf("%3u", config->module.pin_base + i);
 	}

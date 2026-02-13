@@ -16,14 +16,14 @@
 #include "gpios.h"
 #include "led.h"
 #include "log.h"
+#include "pwm.h"
 #include "rs232.h"
 #include "rs485.h"
-#include "pwm.h"
 
 #include <stdio.h>
 
-#include <pico/time.h>
 #include <pico/multicore.h>
+#include <pico/time.h>
 
 static enum ana_cmd_code last_cmd = ANA_CMD_NONE;
 
@@ -31,8 +31,18 @@ typedef struct {
 	void (*execute)(void);
 } cmd;
 
-static void cmd_none(void)
+static void cmd_help(void)
 {
+	printf("\n \tMulti-Signal Analyzer - Command Table\n");
+	log_inf("main", "0x00 - Reserved");
+	log_inf("main", "0x01 - ADC Test");
+	log_inf("main", "0x02 - CAN Test");
+	log_inf("main", "0x03 - GPIOS Test");
+	log_inf("main", "0x04 - LED Test");
+	log_inf("main", "0x05 - RS232 Test");
+	log_inf("main", "0x06 - RS485 Test");
+	log_inf("main", "0x07 - PWM Test");
+	printf("\n");
 }
 
 static void adc_print(int samples, int channel, double *adc_values)
@@ -112,18 +122,16 @@ static void cmd_rs485_test(void)
 
 static void cmd_pwm_test(void)
 {
-	if(multicore_fifo_wready()){
+	if (multicore_fifo_wready()) {
 		multicore_fifo_push_blocking_inline(PWM_START_FLAG);
 		ana_pwm_measure_input_capture();
-	}
-	else{
+	} else {
 		log_err("test - cmd", "Multicore FIFO not ready to receive data");
 	}
-
 }
 
 static const cmd cmd_list[_ANA_CMD_AMOUNT] = {
-	[ANA_CMD_NONE] = {cmd_none},        [ANA_CMD_ADC] = {cmd_adc_test},
+	[ANA_CMD_NONE] = {cmd_help},        [ANA_CMD_ADC] = {cmd_adc_test},
 	[ANA_CMD_CAN] = {cmd_can_test},     [ANA_CMD_GPIOS] = {cmd_gpios_test},
 	[ANA_CMD_LED] = {cmd_led_test},     [ANA_CMD_RS232] = {cmd_rs232_test},
 	[ANA_CMD_RS485] = {cmd_rs485_test}, [ANA_CMD_PWM] = {cmd_pwm_test},
@@ -131,11 +139,16 @@ static const cmd cmd_list[_ANA_CMD_AMOUNT] = {
 
 void ana_cmd_process(enum ana_cmd_code code_cmd)
 {
-	if (code_cmd <= ANA_CMD_NONE || code_cmd >= _ANA_CMD_AMOUNT) {
+	if (code_cmd < ANA_CMD_NONE || code_cmd >= _ANA_CMD_AMOUNT) {
 		printf("Invalid command code: %d\n", code_cmd);
 		return;
 	}
 
 	cmd_list[code_cmd].execute();
 	last_cmd = code_cmd;
+}
+
+void ana_cmd_table(void)
+{
+	cmd_help();
 }

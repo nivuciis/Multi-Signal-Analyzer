@@ -35,4 +35,10 @@ enum ana_cmd_code {
  */
 void ana_cmd_process(enum ana_cmd_code cmd_code);
 
+/**
+ * @brief Print the command table to the console
+ * 
+ */
+void ana_cmd_table(void);
+
 #endif /* CMD_H */

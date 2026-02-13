@@ -25,6 +25,7 @@ pico_board_cmake_set(PICO_PLATFORM, rp2350)
 /**
  * @brief RP2350 variant identifier
  *
+ * @note 0 = RP2350B, 1 = RP2350A
  */
 #define PICO_RP2350A 0
 
@@ -96,6 +97,9 @@ pico_board_cmake_set(PICO_PLATFORM, rp2350)
 #endif
 #ifndef PICO_DEFAULT_ADC_CHANNEL_3
 #define PICO_DEFAULT_ADC_CHANNEL_3 45
+#endif
+#ifndef PICO_DEFAULT_ADC_VOLTAGE_DIVIDER
+#define PICO_DEFAULT_ADC_VOLTAGE_DIVIDER 1
 #endif
 
 /**

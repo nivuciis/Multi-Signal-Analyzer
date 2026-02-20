@@ -279,8 +279,9 @@ void sigrok_process_byte(uint8_t received_command)
 
 		strcpy(response, "*");
 
-		/**
-		 * @note: Since there are few commands, the time to find and process the correct command is fast.
+		/*
+		 * Since there are few commands, the time to find and process the correct command is
+		 * fast.
 		 */
 		for (size_t i = 0; i < sizeof(sigrok_commands) / sizeof(sigrok_command_t); i++) {
 			if (cmd_str[0] == sigrok_commands[i].command) {

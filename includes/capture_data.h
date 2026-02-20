@@ -13,7 +13,6 @@
 #define CAPTURE_DATA_H
 
 #include <pico/stdlib.h>
-
 /**
  * @brief Define the length of the capture buffers
  *
@@ -33,16 +32,6 @@
  */
 
 #define BASE_PIN 0
-
-/**
- * @brief Digital buffer
- */
-extern uint16_t digital_capture_buffer[CAPTURE_DEPTH];
-
-/**
- * @brief Analog buffer
- */
-extern uint8_t analog_capture_buffer[CAPTURE_DEPTH * 3];
 
 /**
  * @brief Initialize the GPIO`s, PIO and DMA for data capture
@@ -65,5 +54,19 @@ void ana_capture_data(uint32_t sample_count, uint32_t sample_rate_hz, uint8_t an
  * @return int number of analog channels enabled
  */
 int ana_get_analog_channels_count(uint8_t analog_mask);
+
+/**
+ * @brief Get the digital capture buffer
+ *
+ * @return uint16_t* Pointer to the digital capture buffer
+ */
+uint16_t* ana_get_digital_capture_buffer(void);
+
+/**
+ * @brief Get the analog capture buffer
+ *
+ * @return uint8_t* Pointer to the analog capture buffer
+ */
+uint8_t* ana_get_analog_capture_buffer(void);
 
 #endif // CAPTURE_DATA_H

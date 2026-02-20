@@ -26,8 +26,8 @@ static int dma_digital_channel;
 static int dma_analog_channel;
 static const uint32_t adc_max_total_rate = 500000;
 
-uint16_t digital_capture_buffer[CAPTURE_DEPTH];
-uint8_t analog_capture_buffer[CAPTURE_DEPTH * 3];
+static uint16_t digital_capture_buffer[CAPTURE_DEPTH];
+static uint8_t analog_capture_buffer[CAPTURE_DEPTH * 3];
 
 int ana_capture_init()
 {
@@ -203,4 +203,14 @@ void ana_capture_data(uint32_t sample_count, uint32_t sample_rate_hz, uint8_t an
 	pio_sm_set_enabled(pio, sm, false);
 	adc_fifo_drain();
 	adc_set_round_robin(0);
+}
+
+uint16_t *ana_get_digital_capture_buffer(void)
+{
+	return digital_capture_buffer;
+}
+
+uint8_t *ana_get_analog_capture_buffer(void)
+{
+	return analog_capture_buffer;
 }

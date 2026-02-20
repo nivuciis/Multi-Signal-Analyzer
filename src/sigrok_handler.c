@@ -12,9 +12,11 @@
 
 #include "capture_data.h"
 #include "led.h"
+#include "log.h"
 #include "macros.h"
 #include "sigrok_handler.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -25,17 +27,21 @@
 
 static uint32_t sample_rate = 5000;
 static uint32_t num_samples = 1024;
-static int analog_channel;
-static int digital_channel;
-static uint8_t analog_mask = 0x07;
 static uint16_t digital_mask = 0xFFFF;
-static int digital_bits_per_transfer = 2;
+static uint8_t analog_mask = 0x07;
+static uint analog_channel;
+static uint digital_channel;
+static uint digital_bits_per_transfer = 2;
 
 static char cmd_str[32];
+static char response[64];
+static char *end;
 static int cmd_str_index = 0;
 
-extern uint16_t digital_capture_buffer[];
-extern uint8_t analog_capture_buffer[];
+typedef struct {
+	uint8_t command;
+	void (*handler)(void);
+} sigrok_command_t;
 
 /**
  * @brief Send a response string over USB CDC
@@ -103,8 +109,8 @@ static void ana_send_packet_channels(void)
 	uint8_t packet[1024];
 	uint32_t packet_index = 0;
 
-	const uint16_t *dig_pointer = digital_capture_buffer;
-	const uint8_t *ana_pointer = analog_capture_buffer;
+	const uint16_t *dig_pointer = ana_get_digital_capture_buffer();
+	const uint8_t *ana_pointer = ana_get_analog_capture_buffer();
 
 	int active_analog_channels = ana_get_analog_channels_count(analog_mask);
 	ana_update_digital_settings();
@@ -134,6 +140,122 @@ static void ana_send_packet_channels(void)
 	}
 }
 
+static void handle_identify(void)
+{
+	ana_send_response("SRPICO,A031D16,02");
+	ana_led_set_status(LED_STATUS_CONNECTED);
+}
+
+static void handle_set_sample_rate(void)
+{
+	sample_rate = strtol(&cmd_str[1], &end, 10);
+
+	if (*end != '\0') {
+		log_debug("sigrok_handle", "Invalid sample rate");
+		return;
+	}
+
+	if (sample_rate < 5000) {
+		sample_rate = 5000;
+	} else if (sample_rate >= 150000000) {
+
+#ifdef ENABLE_OVERCLOCKING
+		vreg_set_voltage(VREG_VOLTAGE_1_25);
+		sleep_ms(1);
+		set_sys_clock_khz(250000000, true);
+#endif
+
+		sample_rate = 150000000;
+	}
+}
+
+static void handle_set_sample_limit(void)
+{
+	num_samples = strtol(&cmd_str[1], &end, 10);
+
+	if (*end != '\0') {
+		log_debug("sigrok_handle", "Invalid sample limit");
+	}
+
+	if (num_samples > CAPTURE_BUFFER_SIZE) {
+		num_samples = CAPTURE_BUFFER_SIZE;
+	}
+}
+
+static void handle_get_analog_scale(void)
+{
+	analog_channel = strtol(&cmd_str[1], &end, 10);
+
+	if (*end != '\0') {
+		analog_channel = 0;
+		log_debug("sigrok_handle", "Invalid analog channel");
+		return;
+	}
+
+	if (analog_channel >= 0 && analog_channel <= 2) {
+		ana_send_response("25700x0");
+	} else {
+		ana_send_response("ERR");
+	}
+}
+
+static void handle_set_analog_channel(void)
+{
+	int is_channel_enable = cmd_str[1] - '0';
+	analog_channel = strtol(&cmd_str[2], &end, 10);
+
+	if (*end != '\0') {
+		log_debug("sigrok_handle", "Invalid analog channel");
+		return;
+	}
+
+	if (analog_channel >= 0 && analog_channel <= 2) {
+		if (is_channel_enable) {
+			analog_mask |= (1 << analog_channel);
+		} else {
+			analog_mask &= ~(1 << analog_channel);
+		}
+	}
+}
+
+static void handle_set_digital_channel(void)
+{
+	int is_digital_channel_enable = cmd_str[1] - '0';
+	digital_channel = strtol(&cmd_str[2], &end, 10);
+
+	if (*end != '\0') {
+		log_debug("sigrok_handle", "Invalid digital channel");
+		return;
+	}
+
+	if (digital_channel >= 0 && digital_channel <= 15) {
+		if (is_digital_channel_enable) {
+			digital_mask |= (1 << digital_channel);
+		} else {
+			digital_mask &= ~(1 << digital_channel);
+		}
+	}
+}
+
+static void handle_fixed_capture(void)
+{
+	response[0] = '\0';
+	ana_led_set_status(LED_STATUS_CAPTURING);
+	ana_capture_data(num_samples, sample_rate, analog_mask);
+	ana_send_packet_channels();
+	ana_led_set_status(LED_STATUS_CONNECTED);
+}
+
+static const sigrok_command_t sigrok_commands[] = {
+	{IDENTIFY_CMD, handle_identify},
+	{SET_SAMPLE_RATE_CMD, handle_set_sample_rate},
+	{SET_SAMPLE_LIMIT_CMD, handle_set_sample_limit},
+	{GET_ANALOG_SCALE_CMD, handle_get_analog_scale},
+	{SET_ANALOG_CHANNEL_CMD, handle_set_analog_channel},
+	{SET_DIGITAL_CHANNEL_CMD, handle_set_digital_channel},
+	{FIXED_CAPTURE_CMD, handle_fixed_capture},
+};
+
 void sigrok_init(void)
 {
 	cmd_str_index = 0;
@@ -142,7 +264,7 @@ void sigrok_init(void)
 
 void sigrok_process_byte(uint8_t received_command)
 {
-	char response[64];
+	memset(&response, 0, sizeof(response));
 	response[0] = '\0';
 
 	if (received_command == '*') {
@@ -156,80 +278,17 @@ void sigrok_process_byte(uint8_t received_command)
 
 		strcpy(response, "*");
 
-		switch (cmd_str[0]) {
-		case IDENTIFY_CMD:
-			ana_send_response("SRPICO,A031D16,02");
-			ana_led_set_status(LED_STATUS_CONNECTED);
-			break;
-
-		case SET_SAMPLE_RATE_CMD:
-			sample_rate = atol(&cmd_str[1]);
-			if (sample_rate < 5000) {
-				sample_rate = 5000;
-			} else if (sample_rate >= 150000000) {
-#ifdef ENABLE_OVERCLOCKING
-				vreg_set_voltage(VREG_VOLTAGE_1_25);
-				sleep_ms(1);
-				set_sys_clock_khz(250000000, true);
-#endif
-				sample_rate = 150000000;
+		/**
+		 * @note: Since there are few commands, the time to find and process the correct command is fast.
+		 */
+		for (size_t i = 0; i < sizeof(sigrok_commands) / sizeof(sigrok_command_t); i++) {
+			if (cmd_str[0] == sigrok_commands[i].command) {
+				sigrok_commands[i].handler();
+				break;
 			}
-			break;
-
-		case SET_SAMPLE_LIMIT_CMD:
-			num_samples = atol(&cmd_str[1]);
-			if (num_samples > CAPTURE_BUFFER_SIZE) {
-				num_samples = CAPTURE_BUFFER_SIZE;
-			}
-			break;
-
-		case GET_ANALOG_SCALE_CMD:
-			analog_channel = atoi(&cmd_str[1]);
-			if (analog_channel >= 0 && analog_channel <= 2) {
-				ana_send_response("25700x0");
-			} else {
-				ana_send_response("ERR");
-			}
-
-			break;
-
-		case SET_ANALOG_CHANNEL_CMD:
-			int is_channel_enable = cmd_str[1] - '0';
-			analog_channel = atoi(&cmd_str[2]);
-			if (analog_channel >= 0 && analog_channel <= 2) {
-				if (is_channel_enable) {
-					analog_mask |= (1 << analog_channel);
-				} else {
-					analog_mask &= ~(1 << analog_channel);
-				}
-			}
-			break;
-
-		case SET_DIGITAL_CHANNEL_CMD:
-			int is_digital_channel_enable = cmd_str[1] - '0';
-			digital_channel = atoi(&cmd_str[2]);
-			if (digital_channel >= 0 && digital_channel <= 15) {
-				if (is_digital_channel_enable) {
-					digital_mask |= (1 << digital_channel);
-				} else {
-					digital_mask &= ~(1 << digital_channel);
-				}
-			}
-			break;
-
-		case FIXED_CAPTURE_CMD:
-			response[0] = 0;
-			ana_led_set_status(LED_STATUS_CAPTURING);
-			ana_capture_data(num_samples, sample_rate, analog_mask);
-			ana_send_packet_channels();
-			ana_led_set_status(LED_STATUS_CONNECTED);
-			break;
-
-		default:
-			break;
 		}
 
-		if (response[0] != 0) {
+		if (response[0] != '\0') {
 			ana_send_response(response);
 		}
 

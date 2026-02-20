@@ -3,8 +3,9 @@
  *
  * @brief Handles the Sigrok protocol communication over USB CDC.
  * @author Vinicius Rafael Marques de Carvalho (vinicius.carvalho@edge.ufal.br)
- * @version 0.1
- * @date 28/01/2026
+ * @author João Matheus Nascimento Dias (joao.dias@edge.ufal.br)
+ * @version 0.2
+ * @date 20/02/2026
  *
  * @copyright Copyright (c) 2026
  *

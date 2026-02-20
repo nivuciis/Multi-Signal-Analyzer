@@ -60,13 +60,13 @@ int ana_get_analog_channels_count(uint8_t analog_mask);
  *
  * @return uint16_t* Pointer to the digital capture buffer
  */
-uint16_t* ana_get_digital_capture_buffer(void);
+uint16_t *ana_get_digital_capture_buffer(void);
 
 /**
  * @brief Get the analog capture buffer
  *
  * @return uint8_t* Pointer to the analog capture buffer
  */
-uint8_t* ana_get_analog_capture_buffer(void);
+uint8_t *ana_get_analog_capture_buffer(void);
 
 #endif // CAPTURE_DATA_H

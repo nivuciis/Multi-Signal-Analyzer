@@ -70,6 +70,10 @@ pico_enable_stdio_uart(multi_signal_analyzer 0)
 target_link_libraries(multi_signal_analyzer 
             hardware_dma
             hardware_pio
+            hardware_adc
+            hardware_vreg
+            hardware_clocks
+            hardware_timer
             pico_stdlib
             tinyusb_device
             tinyusb_board
@@ -79,6 +83,8 @@ target_link_libraries(multi_signal_analyzer
 pico_enable_stdio_usb(multi_signal_analyzer 0)  
 # Add the standard include files to the build
 target_include_directories(multi_signal_analyzer PRIVATE
+        ${INCLUDE_DIRS}
+        ${SOURCE_DIRS}
         ${CMAKE_CURRENT_LIST_DIR}
 )
 

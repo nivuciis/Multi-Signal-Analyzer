@@ -17,13 +17,13 @@
  * @brief Define the length of the capture buffers
  *
  */
-#define CAPTURE_DEPTH 4096
+#define CAPTURE_BUFFER_SIZE 4096
 
 /**
  * @brief Define the size of the capture buffers
- *
+ * MAX SAMPLES ATE SIGROK_HANDLE
  */
-#define CAPTURE_BUFFER_SIZE (16 * 1024)
+#define CAPTURE_MAX_SAMPLES (16 * 1024)
 
 /**
  * @brief Set the base pin for digital capture
@@ -45,7 +45,7 @@ int ana_capture_init(void);
  * @param sample_rate_hz Sample rate in Hz
  * @param analog_mask Bitmask to indicate which analog channels to capture
  */
-void ana_capture_data(uint32_t sample_count, uint32_t sample_rate_hz, uint8_t analog_mask);
+void ana_capture_data_start(uint32_t sample_count, uint32_t sample_rate_hz, uint8_t analog_mask);
 
 /**
  * @brief Get the analog channels count
@@ -53,20 +53,20 @@ void ana_capture_data(uint32_t sample_count, uint32_t sample_rate_hz, uint8_t an
  * @param analog_mask bitmask of analog channels enabled
  * @return int number of analog channels enabled
  */
-int ana_get_analog_channels_count(uint8_t analog_mask);
+int ana_capture_data_get_analog_channels_count(uint8_t analog_mask);
 
 /**
  * @brief Get the digital capture buffer
  *
  * @return uint16_t* Pointer to the digital capture buffer
  */
-uint16_t *ana_get_digital_capture_buffer(void);
+uint16_t *ana_capture_data_get_digital_capture_buffer(void);
 
 /**
  * @brief Get the analog capture buffer
  *
  * @return uint8_t* Pointer to the analog capture buffer
  */
-uint8_t *ana_get_analog_capture_buffer(void);
+uint8_t *ana_capture_data_get_analog_capture_buffer(void);
 
 #endif // CAPTURE_DATA_H

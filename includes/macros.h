@@ -13,13 +13,13 @@
 #ifndef MACROS_H
 #define MACROS_H
 
-#define LOG_MODULE "macros"
-
 #include "log.h"
+
+#define LOG_MODULE "macros"
 
 /**
  * @brief Enable or disable overclocking feature.
- * 
+ *
  */
 #define ENABLE_OVERCLOCKING false
 
@@ -41,7 +41,7 @@
 #define CHECK_RANGE(val, min, max, str)                                                            \
 	do {                                                                                       \
 		if ((val) < (min) || (val) > (max)) {                                              \
-			log_err(LOG_MODULE, str);                                                               \
+			log_err(LOG_MODULE, str);                                                  \
 			return;                                                                    \
 		}                                                                                  \
 	} while (0)

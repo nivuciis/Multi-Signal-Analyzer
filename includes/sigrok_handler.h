@@ -1,6 +1,6 @@
 /** -------------------------------------------------------------
  * @file sigrok_handler.h
- * @brief
+ * @brief Sigrok protocol handler interface
  *
  * @author   Vinicius Rafael Marques de Carvalho <vinicius.carvalho@edge.ufal.br>
  * @version  0.1
@@ -10,68 +10,33 @@
 
 #ifndef SIGROK_HANDLER_H
 #define SIGROK_HANDLER_H
+
 #include <stdint.h>
 
 /**
- * @brief Identifier
- *
- * @note its needed to identify the device to Sigrok/PulseView
- */
-#define IDENTIFY_CMD 'i'
-
-/**
- * @brief Set sample rate
- *
- * @note Sets the sample rate for the capture
- */
-#define SET_SAMPLE_RATE_CMD 'R'
-
-/**
- * @brief Set sample limit
- *
- * @note Sets the sample limit for the capture
- */
-#define SET_SAMPLE_LIMIT_CMD 'L'
-
-/**
- * @brief Get analog scale
- *
- * @note Gets the analog scale for the capture
- */
-#define GET_ANALOG_SCALE_CMD 'a'
-
-/**
- * @brief Enable/Disable analog channels
- *
- * @note The received message is Axyy where x is 0 for disabled, 1 for enabled and yy is the
- * specified channel
- */
-#define SET_ANALOG_CHANNEL_CMD 'A'
-
-/**
- * @brief Enable/Disable digital channels
- *
- * @note The received message is Dxyy where x is 0 for disabled, 1 for enabled and yy is the
- * specified channel
- */
-#define SET_DIGITAL_CHANNEL_CMD 'D'
-
-/**
- * @brief Starts the capture process
+ * @brief Enum for the supported Sigrok commands
  *
  */
-#define FIXED_CAPTURE_CMD 'F'
+enum SIGROK_PROTOCOL_COMMANDS {
+	SIGROK_CMD_IDENTIFY = 'i',            /**< Identifier for the device to be recognized by Sigrok/PulseView */
+	SIGROK_CMD_SET_SAMPLE_RATE = 'R',     /**< Command to set the sample rate */
+	SIGROK_CMD_SET_SAMPLE_LIMIT = 'L',    /**< Command to set the sample limit */
+	SIGROK_CMD_GET_ANALOG_SCALE = 'a',    /**< Command to get the analog scale */
+	SIGROK_CMD_SET_ANALOG_CHANNEL = 'A',  /**< Command to cmd[Axyy]: (A)nalog x=1(enable)/x=0(disable) (yy) channels */
+	SIGROK_CMD_SET_DIGITAL_CHANNEL = 'D', /**< Command to cmd[Dxyy]: (D)igital x=1(enable)/x=0(disable) (yy)channels */
+	SIGROK_CMD_FIXED_CAPTURE = 'F',       /**< Command to start capture process */
+};
 
 /**
  * @brief Initialize the Sigrok protocol handler
  */
-void sigrok_init(void);
+void ana_sigrok_handle_init(void);
 
 /**
  * @brief Process the received messages from Sigrok/PulseView
  *
  * @param received_message The received command byte
  */
-void sigrok_process_byte(uint8_t received_command);
+void ana_sigrok_handle_process_byte(uint8_t received_command);
 
 #endif

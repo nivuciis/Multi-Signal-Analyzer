@@ -20,6 +20,8 @@
 #include <tusb.h>
 #include <hardware/timer.h>
 
+static char buf[64];
+
 /**
  * @brief Callback to synchronize the LED status with the USB connection state
  *
@@ -35,11 +37,11 @@ int main()
 {
 	ana_led_init();
 	tusb_init();
-	sigrok_init();
+	ana_sigrok_handle_init();
 
 	if (ana_capture_init() != PICO_OK) {
 		ana_led_set_status(LED_STATUS_ERROR);
-		return PICO_ERROR_GENERIC;
+		return PICO_ERROR_IO;
 	}
 	struct repeating_timer usb_conection_timer;
 
@@ -49,10 +51,9 @@ int main()
 		tud_task();
 
 		if (tud_cdc_available()) {
-			char buf[64];
 			uint32_t count = tud_cdc_read(buf, sizeof(buf));
 			for (uint32_t i = 0; i < count; i++) {
-				sigrok_process_byte(buf[i]);
+				ana_sigrok_handle_process_byte(buf[i]);
 			}
 		}
 		__wfi();

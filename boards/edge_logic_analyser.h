@@ -32,7 +32,7 @@ pico_board_cmake_set(PICO_PLATFORM, rp2350)
  * @brief RP2350 variant identifier
  *
  */
-#define PICO_RP2350A 1
+#define PICO_RP2350A 0
 
 /**
  * @brief UART configuration
@@ -55,6 +55,17 @@ pico_board_cmake_set(PICO_PLATFORM, rp2350)
  */
 #ifndef PICO_DEFAULT_LED_PIN
 #define PICO_DEFAULT_LED_PIN 32
+#endif
+
+/**
+ * @brief CHANNELS configuration
+ *
+ */
+#ifndef PICO_DEFAULT_CHANNELS_PIN_BASE
+#define PICO_DEFAULT_CHANNELS_PIN_BASE 8
+#endif
+#ifndef PICO_DEFAULT_CHANNELS_PIN_COUNT
+#define PICO_DEFAULT_CHANNELS_PIN_COUNT 12
 #endif
 
 /**

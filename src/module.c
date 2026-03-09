@@ -11,6 +11,7 @@
  *******************************************************************/
 #include "log.h"
 #include "module.h"
+#include <hardware/pio.h>
 
 void ana_module_pio_init(struct ana_module_system *config)
 {
@@ -102,4 +103,11 @@ void ana_module_pio_dma_abort(struct ana_module_system *config)
 	}
 
 	config->dma.has_complete = true;
+}
+
+void ana_module_set_sample_rate(struct ana_module_system *config, uint32_t sample_rate_hz)
+{
+	config->module.sample_rate_hz = sample_rate_hz;
+	float clkdiv = clock_get_hz(clk_sys) / (float)sample_rate_hz;
+	pio_sm_set_clkdiv(config->pio.instance, config->pio.sm, clkdiv);
 }

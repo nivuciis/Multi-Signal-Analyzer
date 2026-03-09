@@ -14,6 +14,6 @@
 LOOP:
    in pins, 12
    in null, 4 ; 16 bits (12 from pins + 4 null)
-   ;push block - Uncommented if not using autopush at SM setup
+   ;push block ; Uncommented if not using autopush at SM setup
    jmp LOOP 
 .wrap

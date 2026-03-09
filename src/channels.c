@@ -24,7 +24,7 @@ struct ana_module_system channels = {
 			.pin_base = PICO_DEFAULT_CHANNELS_PIN_BASE,
 			.pin_count = PICO_DEFAULT_CHANNELS_PIN_COUNT,
 			.samples = 0,
-			.mask = 0xFF70,
+			.mask = 0xFFF0, /**< Default mask to select the first 12 bits/channels */
 			.sample_rate_hz = 1,
 		},
         .pio = {0},

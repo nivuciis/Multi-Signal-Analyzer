@@ -17,13 +17,13 @@
  * @brief GPIO pin for USB connected detection
  *
  */
-#define LED_USB_PIN 25
+#define LED_USB_PIN PICO_DEFAULT_LED_PIN
 
 /**
  * @brief GPIO pin to indicate capturing mode
  *
  */
-#define LED_BLINK_PIN 2
+#define LED_BLINK_PIN PICO_DEFAULT_LED_PIN
 
 /**
  * @brief Led operation states

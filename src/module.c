@@ -11,6 +11,8 @@
  *******************************************************************/
 #include "log.h"
 #include "module.h"
+#include <stdbool.h>
+#include <hardware/gpio.h>
 #include <hardware/pio.h>
 
 void ana_module_pio_init(struct ana_module_system *config)
@@ -29,7 +31,7 @@ void ana_module_pio_init(struct ana_module_system *config)
 	for (int i = 0; i < config->module.pin_count; i++) {
 		pin = config->module.pin_base + i;
 		pio_gpio_init(config->pio.instance, pin);
-		gpio_pull_down(pin);
+		gpio_set_pulls(pin, false, true);
 	}
 
 	pio_sm_set_consecutive_pindirs(config->pio.instance, config->pio.sm,
@@ -37,7 +39,7 @@ void ana_module_pio_init(struct ana_module_system *config)
 	sm_config_set_wrap(&sm_cfg, config->pio.pio_offset,
 			   config->pio.pio_offset + config->pio.pio_program->length - 1);
 	sm_config_set_in_pins(&sm_cfg, config->module.pin_base);
-	sm_config_set_in_shift(&sm_cfg, false, true, config->module.pin_count);
+	sm_config_set_in_shift(&sm_cfg, false, true, 16);
 
 	float clkdiv = clock_get_hz(clk_sys) / (float)config->module.sample_rate_hz;
 	sm_config_set_clkdiv(&sm_cfg, clkdiv);
@@ -78,6 +80,7 @@ void ana_module_pio_dma_start(struct ana_module_system *config)
 			      config->module.samples, false);
 
 	dma_channel_start(config->dma.instance);
+	pio_sm_set_enabled(config->pio.instance, config->pio.sm, true);
 }
 
 void ana_module_pio_dma_wait(struct ana_module_system *config)

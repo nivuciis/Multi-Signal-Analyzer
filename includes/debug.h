@@ -10,15 +10,21 @@
  *
  *******************************************************************/
 
- #ifndef DEBUG_H
- #define DEBUG_H
+#ifndef DEBUG_H
+#define DEBUG_H
 
- /**
-  * @brief Debug mode flag
-  * 
-  * @note Set to 1 to enable debug messages, 0 to disable at log.c
-  *
-  */
- #define DEBUG 0
+/**
+ * @brief Debug mode flag
+ *
+ * @note Set to 1 to enable debug messages, 0 to disable at log.c
+ *
+ */
+#define DEBUG 0
 
- #endif /* DEBUG_H */
+/**
+ * @brief Maximum number of samples to capture in debug mode
+ *
+ */
+#define MAX_SAMPLES_FOR_DEBUG 1024
+
+#endif /* DEBUG_H */

@@ -12,9 +12,11 @@
  *******************************************************************/
 
 #include "capture_data.h"
+#include "channels.h"
 #include "led.h"
 #include "log.h"
 #include "macros.h"
+#include "module.h"
 #include "sigrok_handler.h"
 
 #include <stdint.h>
@@ -26,12 +28,12 @@
 #include <hardware/vreg.h>
 #include <tusb.h>
 
-#define DIGITAL_MASK_DEFAULT 0xFFFF
+#define DIGITAL_MASK_DEFAULT 0x0FFF
 #define ANALOG_MASK_DEFAULT  0x07
 
 /*
- * TODO: when the modules were full implemented, switch to a module struct to encapsulate the capture data
- * state @JoaoMatheusND
+ * TODO: when the modules were full implemented, switch to a module struct to encapsulate the
+ * capture data state @JoaoMatheusND
  */
 static struct SIGROK_HANDLER {
 	uint32_t sample_rate;
@@ -148,8 +150,9 @@ static void ana_send_packet_channels(void)
 	memset(self.packet, 0, sizeof(self.packet));
 	uint32_t packet_index = 0;
 
-	const uint16_t *dig_pointer = ana_capture_data_get_digital_capture_buffer();
-	const uint8_t *ana_pointer = ana_capture_data_get_analog_capture_buffer();
+	struct ana_module_system *channels_module = ana_channels_get_module();
+
+	const uint16_t *dig_pointer = channels_module->dma.dma_buffer;
 
 	int active_analog_channels = ana_capture_data_get_analog_channels_count(self.analog_mask);
 	uint32_t bytes_per_samples = self.digital_bits_per_transfer + active_analog_channels;
@@ -173,13 +176,19 @@ static void ana_send_packet_channels(void)
 			self.packet[packet_index] =
 				(uint8_t)(0x80 | ((raw_digital_sample >> (b * 7)) & 0x7F));
 			packet_index++;
-		}
+		} 
 
-		for (int j = 0; j < active_analog_channels; j++) {
-			self.packet[packet_index] =
-				(uint8_t)(0x80 | ((*ana_pointer++ >> 1) & 0x7F));
-			packet_index++;
-		}
+		/**
+		 * When the ADC capture is implemented, uncommented this part @JoaoMatheusND
+		 *
+		 * const uint8_t *ana_pointer = ana_capture_data_get_analog_capture_buffer();
+		 * 
+		 * for (int j = 0; j < active_analog_channels; j++) {
+		 * 	self.packet[packet_index] =
+		 * 		(uint8_t)(0x80 | ((*ana_pointer++ >> 1) & 0x7F));
+		 * 	packet_index++;
+		 * }
+		 */
 	}
 
 	if (packet_index > 0) {
@@ -196,6 +205,7 @@ static void handle_identify(void)
 static void handle_set_sample_rate(void)
 {
 	self.sample_rate = strtol(&self.cmd_str[1], &end, 10);
+	struct ana_module_system *channels_module = ana_channels_get_module();
 
 	if (*end != '\0') {
 		log_debug("sigrok_handle", "Invalid sample rate");
@@ -214,6 +224,8 @@ static void handle_set_sample_rate(void)
 
 		self.sample_rate = 150000000;
 	}
+
+	channels_module->module.sample_rate_hz = self.sample_rate;
 }
 
 static void handle_set_sample_limit(void)
@@ -224,8 +236,8 @@ static void handle_set_sample_limit(void)
 		log_debug("sigrok_handle", "Invalid sample limit");
 	}
 
-	if (self.num_samples > CAPTURE_MAX_SAMPLES) {
-		self.num_samples = CAPTURE_MAX_SAMPLES;
+	if (self.num_samples > 1024) {
+		self.num_samples = 1024;
 	}
 }
 
@@ -286,9 +298,14 @@ static void handle_set_digital_channel(void)
 
 static void handle_fixed_capture(void)
 {
+	memset(self.response, 0, sizeof(char)*64);
 	self.response[0] = '\0';
+	struct ana_module_system *config = ana_channels_get_module();
+
+	memset(config->dma.dma_buffer, 0, config->module.samples * sizeof(uint16_t));
+
 	ana_led_set_status(LED_STATUS_CAPTURING);
-	ana_capture_data_start(self.num_samples, self.sample_rate, self.analog_mask);
+	ana_capture_data_start(config);
 	ana_send_packet_channels();
 	ana_led_set_status(LED_STATUS_CONNECTED);
 }

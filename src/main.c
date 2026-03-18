@@ -12,9 +12,11 @@
  *******************************************************************/
 
 #include "capture_data.h"
+#include "channels.h"
 #include "led.h"
 #include "sigrok_handler.h"
 
+#include <arm_acle.h>
 #include <pico/stdlib.h>
 #include <pico/time.h>
 #include <tusb.h>
@@ -38,8 +40,9 @@ int main()
 	ana_led_init();
 	tusb_init();
 	ana_sigrok_handle_init();
+	ana_channels_init(pio0);
 
-	if (ana_capture_init() != PICO_OK) {
+	if (ana_capture_init(ana_channels_get_module()) != PICO_OK) {
 		ana_led_set_status(LED_STATUS_ERROR);
 		return PICO_ERROR_IO;
 	}

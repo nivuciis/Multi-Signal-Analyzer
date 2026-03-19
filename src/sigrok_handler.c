@@ -2,16 +2,20 @@
  * @file sigrok_handler.c
  *
  * @brief Handles the Sigrok protocol communication over USB CDC.
+ *
+ * Protocol reference: https://github.com/pico-coder/sigrok-pico
+ *
  * @author Vinicius Rafael Marques de Carvalho (vinicius.carvalho@edge.ufal.br)
  * @author João Matheus Nascimento Dias (joao.dias@edge.ufal.br)
- * @version 0.2
- * @date 20/02/2026
+ * @version 0.3
+ * @date 18/03/2026
  *
  * @copyright Copyright (c) 2026
  *
  *******************************************************************/
 
 #include "capture_data.h"
+#include "channels.h"
 #include "led.h"
 #include "log.h"
 #include "macros.h"
@@ -24,57 +28,74 @@
 
 #include <hardware/clocks.h>
 #include <hardware/vreg.h>
+#include <pico/time.h>
 #include <tusb.h>
 
-#define DIGITAL_MASK_DEFAULT 0xFFFF
-#define ANALOG_MASK_DEFAULT  0x07
 
-/*
- * TODO: when the modules were full implemented, switch to a module struct to encapsulate the capture data
- * state @JoaoMatheusND
- */
+#define SIGROK_SAMPLE_RATE_MIN  5000U
+#define SIGROK_SAMPLE_RATE_MAX  120000000U
+#define SIGROK_SAMPLE_LIMIT_MAX 1024U
+
+
+#define RLE_BASE    0x30U 
+#define RLE_MAX_RUN 32U   
+
+#define TX_BUF_SIZE 4096U
+
+#define DIGITAL_MASK_DEFAULT 0x0FFF /**< First 12 digital channels */
+#define ANALOG_MASK_DEFAULT  0x07   /**< All 3 analog channels */
+
+/* ----------------------------------------------------------------
+ * Identification string
+ *   "SRPICO,A<a>D<d>,<ver>"
+ *   A03  = 3 analog channels
+ *   D16  = 16 digital channels
+ *   02   = protocol version 2
+ * ---------------------------------------------------------------- */
+#define SIGROK_IDENT_STRING "SRPICO,A031D16,02"
+
+static struct {
+	uint32_t bytes_per_dig_sample; /**< Bytes needed per digital sample (1 or 2) */
+	uint32_t active_analog_ch;     /**< Number of enabled analog channels */
+	uint32_t bytes_per_sample;     /**< Total bytes per combined sample */
+} tx;
+
 static struct SIGROK_HANDLER {
 	uint32_t sample_rate;
 	uint32_t num_samples;
 	uint16_t digital_mask;
 	uint8_t analog_mask;
-	uint8_t packet[1024];
-	uint analog_channel;
-	uint digital_channel;
-	uint digital_bits_per_transfer;
-	int cmd_str_index;
+	uint8_t analog_channel;
+	uint8_t digital_channel;
+	uint8_t digital_bits_per_transfer;
+	int8_t cmd_str_index;
 	char cmd_str[32];
 	char response[64];
+	uint8_t tx_buf[TX_BUF_SIZE];
 } self = {
 	.sample_rate = 5000,
 	.num_samples = 1024,
 	.digital_mask = DIGITAL_MASK_DEFAULT,
 	.analog_mask = ANALOG_MASK_DEFAULT,
-	.packet = {0},
 	.analog_channel = 0,
 	.digital_channel = 0,
 	.digital_bits_per_transfer = 2,
+	.cmd_str_index = 0,
 	.cmd_str = {0},
 	.response = {0},
-	.cmd_str_index = 0,
 };
 
-static char *end;
+static char *end_ptr; 
 
 typedef struct {
 	uint8_t command;
 	void (*handler)(void);
 } sigrok_command_t;
 
-/**
- * @brief Send a response string over USB CDC
- *
- * @param str Response string to send
- */
 static void ana_send_response(const char *str)
 {
 	if (!tud_cdc_connected()) {
-		log_debug("ana_send_response", "Impossible to send response: %s", str);
+		log_debug("sigrok", "Cannot send response (disconnected): %s", str);
 		return;
 	}
 
@@ -82,164 +103,240 @@ static void ana_send_response(const char *str)
 	tud_cdc_write_flush();
 }
 
-/**
- * @brief Send mixed digital and analog signal data over USB CDC
- *
- */
-static void ana_send_data_buffers(uint8_t *packet, uint32_t packet_index)
+static bool ana_send_bytes(const uint8_t *buf, uint32_t len)
 {
 	uint32_t sent = 0;
 
-	while (sent < packet_index) {
-
+	while (sent < len) {
 		if (!tud_cdc_connected()) {
+			return false;
+		}
+
+		uint32_t avail = tud_cdc_write_available();
+		if (avail == 0) {
 			tud_task();
 			continue;
 		}
 
-		uint32_t avail_usb = tud_cdc_write_available();
-		if (avail_usb == 0) {
-			tud_task();
-			continue;
-		}
-
-		uint32_t remaining = packet_index - sent;
-		uint32_t to_send = remaining < avail_usb ? remaining : avail_usb;
-
-		uint32_t written = tud_cdc_write(&packet[sent], to_send);
+		uint32_t chunk = (len - sent) < avail ? (len - sent) : avail;
+		uint32_t written = tud_cdc_write(buf + sent, chunk);
 		sent += written;
 
-		if (sent % 64 == 0 || sent == packet_index) {
+		if ((sent % 64 == 0) || (sent == len)) {
 			tud_cdc_write_flush();
 		} else {
 			tud_task();
 		}
 	}
+	return true;
 }
 
 /**
- * @brief Updates digital settings based on the current digital mask
+ * @brief Pre-compute per-capture transmission parameters.
  *
- * @note If the selected channels are less than 7, use 1 byte per transfer
- *       If between 8 and 14, use 2 bytes per transfer.
+ * Must be called before ana_send_packet_channels() each capture.
+ * Mirrors the tx_init() function from the reference implementation.
  */
-static void ana_update_digital_settings()
+static void tx_init(void)
 {
-	int enabled_count = 0;
-	for (int i = 0; i < 16; i++) {
-		if ((self.digital_mask >> i) & 1) {
-			enabled_count = i + 1;
+	int highest_dig_bit = -1;
+	for (int i = 15; i >= 0; i--) {
+		if (self.digital_mask & (1u << i)) {
+			highest_dig_bit = i;
+			break;
 		}
 	}
-	self.digital_bits_per_transfer = (enabled_count + 6) / 7;
-	if (self.digital_bits_per_transfer == 0) {
-		self.digital_bits_per_transfer = 1;
+
+	if (highest_dig_bit < 0) {
+		tx.bytes_per_dig_sample = 0; /* No digital channels enabled */
+	} else if (highest_dig_bit < 8) {
+		tx.bytes_per_dig_sample = 1; /* ≤8 channels → 1 byte */
+	} else {
+		tx.bytes_per_dig_sample = 2; /* 9–16 channels → 2 bytes */
+	}
+
+	self.digital_bits_per_transfer = tx.bytes_per_dig_sample;
+
+	tx.active_analog_ch = ana_capture_data_get_analog_channels_count(self.analog_mask);
+	tx.bytes_per_sample = tx.bytes_per_dig_sample + tx.active_analog_ch;
+}
+
+static void rle_flush_run(uint8_t *out, uint32_t *idx, uint16_t sample, uint32_t run)
+{
+	while (run > 0) {
+		uint32_t chunk = run < RLE_MAX_RUN ? run : RLE_MAX_RUN;
+
+		out[(*idx)++] = (uint8_t)(RLE_BASE + (chunk - 1)); /* Count token — high bit clear, in range 0x30–0x4F */
+
+		if (tx.bytes_per_dig_sample >= 1) {
+			out[(*idx)++] = (uint8_t)(0x80 | (sample & 0x7F));
+		}
+		if (tx.bytes_per_dig_sample >= 2) {
+			out[(*idx)++] = (uint8_t)(0x80 | ((sample >> 7) & 0x7F));
+		}
+
+		run -= chunk;
 	}
 }
 
-/**
- * @brief Prepare and send a data packet combining digital and analog samples
- *
- * @note digital_values takes the first 16 bits sampled by PIO
- *       analog values takes 3 bytes per sample from the ADC
- */
-static void ana_send_packet_channels(void)
+static bool ana_send_packet_channels(void)
 {
-	memset(self.packet, 0, sizeof(self.packet));
-	uint32_t packet_index = 0;
+	struct ana_module_system *ch = ana_channels_get_module();
+	const uint16_t *dig_ptr = ch->dma.dma_buffer;
 
-	const uint16_t *dig_pointer = ana_capture_data_get_digital_capture_buffer();
-	const uint8_t *ana_pointer = ana_capture_data_get_analog_capture_buffer();
+	uint32_t buf_idx = 0;
+	uint32_t total_sent = 0;
 
-	int active_analog_channels = ana_capture_data_get_analog_channels_count(self.analog_mask);
-	uint32_t bytes_per_samples = self.digital_bits_per_transfer + active_analog_channels;
-	uint32_t raw_digital_sample = *dig_pointer;
+	/* RLE state */
+	uint16_t prev_sample = (uint16_t)((*dig_ptr) & self.digital_mask);
+	uint32_t run_count = 1;
 
-	ana_update_digital_settings();
+	/*
+	 * Flush the TX buffer to USB if it is getting full.
+	 * Worst case per flush: RLE_MAX_RUN token (1) + 2 sample bytes = 3 bytes.
+	 * We flush when there is less than 64 bytes left to keep the buffer safe.
+	 */
+#define FLUSH_THRESHOLD 64U
 
-	for (uint32_t i = 0; i < self.num_samples; i++, dig_pointer++) {
-		raw_digital_sample = *dig_pointer;
+	for (uint32_t i = 1; i < self.num_samples; i++) {
+		uint16_t cur_sample = (uint16_t)(dig_ptr[i] & self.digital_mask);
 
-		/*
-		 * Maybe the packet fill before the samples loop ends, so we need to send the packet
-		 * and start a new one to avoid overflow
-		 */
-		if (packet_index + bytes_per_samples >= sizeof(self.packet)) {
-			ana_send_data_buffers(self.packet, packet_index);
-			packet_index = 0;
-		}
+		if (cur_sample == prev_sample && run_count < RLE_MAX_RUN) {
+			run_count++;
+		} else {
+			rle_flush_run(self.tx_buf, &buf_idx, prev_sample, run_count);
 
-		for (int b = 0; b < self.digital_bits_per_transfer; b++) {
-			self.packet[packet_index] =
-				(uint8_t)(0x80 | ((raw_digital_sample >> (b * 7)) & 0x7F));
-			packet_index++;
-		}
+			/* TODO: interleave analog samples here when ADC is ready
+			 * for (uint32_t a = 0; a < tx.active_analog_ch; a++) {
+			 *     self.tx_buf[buf_idx++] =
+			 *         0x80 | ((ana_buffer[ana_idx++] >> 1) & 0x7F);
+			 * }
+			 */
 
-		for (int j = 0; j < active_analog_channels; j++) {
-			self.packet[packet_index] =
-				(uint8_t)(0x80 | ((*ana_pointer++ >> 1) & 0x7F));
-			packet_index++;
+			/* Flush TX buffer to USB if threshold reached */
+			if (buf_idx + FLUSH_THRESHOLD > TX_BUF_SIZE) {
+				if (!ana_send_bytes(self.tx_buf, buf_idx)) {
+					return false; /* disconnected */
+				}
+				total_sent += buf_idx;
+				buf_idx = 0;
+			}
+
+			prev_sample = cur_sample;
+			run_count = 1;
 		}
 	}
 
-	if (packet_index > 0) {
-		ana_send_data_buffers(self.packet, packet_index);
+	rle_flush_run(self.tx_buf, &buf_idx, prev_sample, run_count);
+
+	if (buf_idx > 0) {
+		if (!ana_send_bytes(self.tx_buf, buf_idx)) {
+			return false;
+		}
+		total_sent += buf_idx;
 	}
+
+	char done_marker[32];
+	snprintf(done_marker, sizeof(done_marker), "$%lu+", (unsigned long)total_sent);
+	ana_send_response(done_marker);
+
+	return true;
+}
+
+static void run_capture(bool continuous)
+{
+	self.response[0] = '\0';
+
+	struct ana_module_system *config = ana_channels_get_module();
+
+	config->module.samples = self.num_samples;
+	ana_module_set_sample_rate(config, self.sample_rate);
+
+	tx_init();
+
+	ana_led_set_status(LED_STATUS_CAPTURING);
+
+	do {
+		memset(config->dma.dma_buffer, 0, config->module.samples * sizeof(uint16_t));
+
+		ana_capture_data_start(config->module.samples, config->module.sample_rate_hz, self.analog_mask);
+
+		bool ok = ana_send_packet_channels();
+
+		if (!ok) {
+			ana_send_response("!!!");
+			log_warn("sigrok", "Capture aborted: host disconnected");
+			break;
+		}
+
+	} while (continuous && tud_cdc_connected());
+
+	ana_led_set_status(LED_STATUS_CONNECTED);
 }
 
 static void handle_identify(void)
 {
-	ana_send_response("SRPICO,A031D16,02");
+	ana_send_response(SIGROK_IDENT_STRING);
 	ana_led_set_status(LED_STATUS_CONNECTED);
 }
 
 static void handle_set_sample_rate(void)
 {
-	self.sample_rate = strtol(&self.cmd_str[1], &end, 10);
+	uint32_t rate = (uint32_t)strtol(&self.cmd_str[1], &end_ptr, 10);
 
-	if (*end != '\0') {
-		log_debug("sigrok_handle", "Invalid sample rate");
+	if (*end_ptr != '\0') {
+		log_warn("sigrok", "Invalid sample rate: %s", &self.cmd_str[1]);
 		return;
 	}
 
-	if (self.sample_rate < 5000) {
-		self.sample_rate = 5000;
-	} else if (self.sample_rate >= 150000000) {
+	/* Clamp to supported range */
+	if (rate < SIGROK_SAMPLE_RATE_MIN) {
+		rate = SIGROK_SAMPLE_RATE_MIN;
+	} else if (rate > SIGROK_SAMPLE_RATE_MAX) {
 
-#ifdef ENABLE_OVERCLOCKING
+#if ENABLE_OVERCLOCKING
 		vreg_set_voltage(VREG_VOLTAGE_1_25);
 		sleep_ms(1);
-		set_sys_clock_khz(250000000, true);
+		set_sys_clock_khz(250000, true);
 #endif
-
-		self.sample_rate = 150000000;
+		rate = SIGROK_SAMPLE_RATE_MAX;
 	}
+
+	self.sample_rate = rate;
+	log_inf("sigrok", "Sample rate set: %lu Hz", (unsigned long)self.sample_rate);
 }
 
 static void handle_set_sample_limit(void)
 {
-	self.num_samples = strtol(&self.cmd_str[1], &end, 10);
+	uint32_t limit = (uint32_t)strtol(&self.cmd_str[1], &end_ptr, 10);
 
-	if (*end != '\0') {
-		log_debug("sigrok_handle", "Invalid sample limit");
+	if (*end_ptr != '\0') {
+		log_warn("sigrok", "Invalid sample limit: %s", &self.cmd_str[1]);
+		return;
 	}
 
-	if (self.num_samples > CAPTURE_MAX_SAMPLES) {
-		self.num_samples = CAPTURE_MAX_SAMPLES;
+	if (limit > SIGROK_SAMPLE_LIMIT_MAX) {
+		limit = SIGROK_SAMPLE_LIMIT_MAX;
 	}
+	if (limit == 0) {
+		limit = 1;
+	}
+
+	self.num_samples = limit;
+	log_inf("sigrok", "Sample limit set: %lu", (unsigned long)self.num_samples);
 }
 
 static void handle_get_analog_scale(void)
 {
-	self.analog_channel = strtol(&self.cmd_str[1], &end, 10);
+	int ch = (int)strtol(&self.cmd_str[1], &end_ptr, 10);
 
-	if (*end != '\0') {
-		self.analog_channel = 0;
-		log_debug("sigrok_handle", "Invalid analog channel");
+	if (*end_ptr != '\0') {
+		log_warn("sigrok", "Invalid analog scale channel");
+		ana_send_response("ERR");
 		return;
 	}
 
-	if (self.analog_channel >= 0 && self.analog_channel <= 2) {
+	if (ch >= 0 && ch <= 2) {
 		ana_send_response("25700x0");
 	} else {
 		ana_send_response("ERR");
@@ -248,49 +345,58 @@ static void handle_get_analog_scale(void)
 
 static void handle_set_analog_channel(void)
 {
-	int is_channel_enable = self.cmd_str[1] - '0';
-	self.analog_channel = strtol(&self.cmd_str[2], &end, 10);
+	int enable = self.cmd_str[1] - '0';
+	int ch = (int)strtol(&self.cmd_str[2], &end_ptr, 10);
 
-	if (*end != '\0') {
-		log_debug("sigrok_handle", "Invalid analog channel");
+	if (*end_ptr != '\0') {
+		log_warn("sigrok", "Invalid analog channel: %s", &self.cmd_str[2]);
 		return;
 	}
 
-	if (self.analog_channel >= 0 && self.analog_channel <= 2) {
-		if (is_channel_enable) {
-			self.analog_mask |= (1 << self.analog_channel);
+	if (ch >= 0 && ch <= 2) {
+		if (enable) {
+			self.analog_mask |= (uint8_t)(1u << ch);
 		} else {
-			self.analog_mask &= ~(1 << self.analog_channel);
+			self.analog_mask &= (uint8_t)(~(1u << ch));
 		}
+		log_inf("sigrok", "Analog ch %d %s", ch, enable ? "enabled" : "disabled");
 	}
 }
 
 static void handle_set_digital_channel(void)
 {
-	int is_digital_channel_enable = self.cmd_str[1] - '0';
-	self.digital_channel = strtol(&self.cmd_str[2], &end, 10);
+	int enable = self.cmd_str[1] - '0';
+	int ch = (int)strtol(&self.cmd_str[2], &end_ptr, 10);
 
-	if (*end != '\0') {
-		log_debug("sigrok_handle", "Invalid digital channel");
+	if (*end_ptr != '\0') {
+		log_warn("sigrok", "Invalid digital channel: %s", &self.cmd_str[2]);
 		return;
 	}
 
-	if (self.digital_channel >= 0 && self.digital_channel <= 15) {
-		if (is_digital_channel_enable) {
-			self.digital_mask |= (1 << self.digital_channel);
+	if (ch >= 0 && ch <= 15) {
+		if (enable) {
+			self.digital_mask |= (uint16_t)(1u << ch);
 		} else {
-			self.digital_mask &= ~(1 << self.digital_channel);
+			self.digital_mask &= (uint16_t)(~(1u << ch));
 		}
+		log_inf("sigrok", "Digital ch %d %s", ch, enable ? "enabled" : "disabled");
 	}
 }
 
 static void handle_fixed_capture(void)
 {
-	self.response[0] = '\0';
-	ana_led_set_status(LED_STATUS_CAPTURING);
-	ana_capture_data_start(self.num_samples, self.sample_rate, self.analog_mask);
-	ana_send_packet_channels();
-	ana_led_set_status(LED_STATUS_CONNECTED);
+	run_capture(false);
+}
+
+/**
+ * @brief Handle the 'C' command — continuous capture.
+ *
+ * TODO: implement true streaming with double-buffering once
+ *       the DMA chaining infrastructure is in place. @JoaoMatheusND
+ */
+static void handle_continuous_capture(void)
+{
+	run_capture(true);
 }
 
 static const sigrok_command_t sigrok_commands[] = {
@@ -301,7 +407,10 @@ static const sigrok_command_t sigrok_commands[] = {
 	{SIGROK_CMD_SET_ANALOG_CHANNEL, handle_set_analog_channel},
 	{SIGROK_CMD_SET_DIGITAL_CHANNEL, handle_set_digital_channel},
 	{SIGROK_CMD_FIXED_CAPTURE, handle_fixed_capture},
+	{SIGROK_CMD_CONTINUOUS_CAPTURE, handle_continuous_capture},
 };
+
+#define SIGROK_COMMAND_COUNT (sizeof(sigrok_commands) / sizeof(sigrok_commands[0]))
 
 void ana_sigrok_handle_init(void)
 {
@@ -311,8 +420,7 @@ void ana_sigrok_handle_init(void)
 
 void ana_sigrok_handle_process_byte(uint8_t received_command)
 {
-	memset(&self.response, 0, sizeof(self.response));
-	self.response[0] = '\0';
+	memset(self.response, 0, sizeof(self.response));
 
 	if (received_command == '*') {
 		ana_sigrok_handle_init();
@@ -325,11 +433,7 @@ void ana_sigrok_handle_process_byte(uint8_t received_command)
 
 		strcpy(self.response, "*");
 
-		/*
-		 * Since there are few commands, the time to find and process the correct command is
-		 * fast.
-		 */
-		for (size_t i = 0; i < sizeof(sigrok_commands) / sizeof(sigrok_command_t); i++) {
+		for (size_t i = 0; i < SIGROK_COMMAND_COUNT; i++) {			/* Buffer overflow — discard and reset */
 			if (self.cmd_str[0] == sigrok_commands[i].command) {
 				sigrok_commands[i].handler();
 				break;
@@ -341,11 +445,12 @@ void ana_sigrok_handle_process_byte(uint8_t received_command)
 		}
 
 		self.cmd_str_index = 0;
+
 	} else {
-		if (self.cmd_str_index < 31) {
-			self.cmd_str[self.cmd_str_index] = (char)received_command;
-			self.cmd_str_index += 1;
+		if (self.cmd_str_index < (int)(sizeof(self.cmd_str) - 1)) {
+			self.cmd_str[self.cmd_str_index++] = (char)received_command;
 		} else {
+			log_warn("sigrok", "Command buffer overflow, resetting");
 			self.cmd_str_index = 0;
 		}
 	}

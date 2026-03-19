@@ -2,21 +2,7 @@
  * @file sigrok_handler.h
  * @brief Sigrok protocol handler interface
  *
- * @author   Vinicius Rafael Marques de Carvalho <vinicius.carvalho@edge.ufal.br>
- * @version  0.2
- * @date     28/01/2026
- * @copyright Copyright (c) 2026
- *  ------------------------------------------------------------*/
-
-#ifndef SIGROK_HANDLER_H
-#define SIGROK_HANDLER_H
-
-#include <stdint.h>
-
-/**
- * @brief Supported Sigrok serial protocol commands.
- *
- * All commands are terminated by CR or LF, except '*' which is
+ * @note: All commands are terminated by CR or LF, except '*' which is
  * processed immediately without a terminator.
  *
  * Protocol reference: https://github.com/pico-coder/sigrok-pico
@@ -31,6 +17,22 @@
  *   - RLE count byte: 0x30–0x7F  (high bit clear — marks a count, not data)
  *   - Abort marker:   "!!!"
  *   - Done marker:    "$<n>+"     (n = total bytes sent as ASCII decimal)
+ *
+ * @author   Vinicius Rafael Marques de Carvalho <vinicius.carvalho@edge.ufal.br>
+ * @author   João Matheus Nascimento Dias <joao.dias@edge.ufal.br>
+ * @version  0.2
+ * @date     19/03/2026
+ * @copyright Copyright (c) 2026
+ *  ------------------------------------------------------------*/
+
+#ifndef SIGROK_HANDLER_H
+#define SIGROK_HANDLER_H
+
+#include <stdint.h>
+
+/**
+ * @brief Command list
+ * 
  */
 enum SIGROK_PROTOCOL_COMMANDS {
 	SIGROK_CMD_IDENTIFY = 'i',           	/** 'i' — Identity query. Firmware responds with capability string. */

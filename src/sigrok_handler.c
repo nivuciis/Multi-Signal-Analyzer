@@ -31,14 +31,12 @@
 #include <pico/time.h>
 #include <tusb.h>
 
-
 #define SIGROK_SAMPLE_RATE_MIN  5000U
 #define SIGROK_SAMPLE_RATE_MAX  120000000U
 #define SIGROK_SAMPLE_LIMIT_MAX 1024U
 
-
-#define RLE_BASE    0x30U 
-#define RLE_MAX_RUN 32U   
+#define RLE_BASE    0x30U
+#define RLE_MAX_RUN 32U
 
 #define TX_BUF_SIZE 4096U
 
@@ -54,13 +52,13 @@
  * ---------------------------------------------------------------- */
 #define SIGROK_IDENT_STRING "SRPICO,A031D16,02"
 
-static struct {
-	uint32_t bytes_per_dig_sample; /**< Bytes needed per digital sample (1 or 2) */
-	uint32_t active_analog_ch;     /**< Number of enabled analog channels */
-	uint32_t bytes_per_sample;     /**< Total bytes per combined sample */
-} tx;
-
 static struct SIGROK_HANDLER {
+	struct {
+		uint32_t bytes_per_dig_sample; /**< Bytes needed per digital sample (1 or 2) */
+		uint32_t active_analog_ch;     /**< Number of enabled analog channels */
+		uint32_t bytes_per_sample;     /**< Total bytes per combined sample */
+		uint8_t buf[TX_BUF_SIZE];
+	} tx;
 	uint32_t sample_rate;
 	uint32_t num_samples;
 	uint16_t digital_mask;
@@ -69,9 +67,9 @@ static struct SIGROK_HANDLER {
 	uint8_t digital_channel;
 	uint8_t digital_bits_per_transfer;
 	int8_t cmd_str_index;
-	char cmd_str[32];
-	char response[64];
-	uint8_t tx_buf[TX_BUF_SIZE];
+	int8_t cmd_str[32];
+	int8_t response[64];
+	char *end_ptr;
 } self = {
 	.sample_rate = 5000,
 	.num_samples = 1024,
@@ -83,9 +81,8 @@ static struct SIGROK_HANDLER {
 	.cmd_str_index = 0,
 	.cmd_str = {0},
 	.response = {0},
+	.tx = {0},
 };
-
-static char *end_ptr; 
 
 typedef struct {
 	uint8_t command;
@@ -148,35 +145,47 @@ static void tx_init(void)
 	}
 
 	if (highest_dig_bit < 0) {
-		tx.bytes_per_dig_sample = 0; /* No digital channels enabled */
+		self.tx.bytes_per_dig_sample = 0; /* No digital channels enabled */
 	} else if (highest_dig_bit < 8) {
-		tx.bytes_per_dig_sample = 1; /* ≤8 channels → 1 byte */
+		self.tx.bytes_per_dig_sample = 1; /* ≤8 channels → 1 byte */
 	} else {
-		tx.bytes_per_dig_sample = 2; /* 9–16 channels → 2 bytes */
+		self.tx.bytes_per_dig_sample = 2; /* 9–16 channels → 2 bytes */
 	}
 
-	self.digital_bits_per_transfer = tx.bytes_per_dig_sample;
+	self.digital_bits_per_transfer = self.tx.bytes_per_dig_sample;
 
-	tx.active_analog_ch = ana_capture_data_get_analog_channels_count(self.analog_mask);
-	tx.bytes_per_sample = tx.bytes_per_dig_sample + tx.active_analog_ch;
+	self.tx.active_analog_ch = ana_capture_data_get_analog_channels_count(self.analog_mask);
+	self.tx.bytes_per_sample = self.tx.bytes_per_dig_sample + self.tx.active_analog_ch;
 }
 
 static void rle_flush_run(uint8_t *out, uint32_t *idx, uint16_t sample, uint32_t run)
 {
+	uint32_t id = *idx;
+
 	while (run > 0) {
-		uint32_t chunk = run < RLE_MAX_RUN ? run : RLE_MAX_RUN;
+		uint32_t chunk = MIN(run, RLE_MAX_RUN);
 
-		out[(*idx)++] = (uint8_t)(RLE_BASE + (chunk - 1)); /* Count token — high bit clear, in range 0x30–0x4F */
+		/* Count token — high bit clear, in range 0x30–0x4F */
+		out[id] = (uint8_t)(RLE_BASE + (chunk - 1));
 
-		if (tx.bytes_per_dig_sample >= 1) {
-			out[(*idx)++] = (uint8_t)(0x80 | (sample & 0x7F));
+		id++;
+
+		if (self.tx.bytes_per_dig_sample >= 1) {
+			out[id] = (uint8_t)(0x80 | (sample & 0x7F));
+
+			id++;
 		}
-		if (tx.bytes_per_dig_sample >= 2) {
-			out[(*idx)++] = (uint8_t)(0x80 | ((sample >> 7) & 0x7F));
+
+		if (self.tx.bytes_per_dig_sample >= 2) {
+			out[id] = (uint8_t)(0x80 | ((sample >> 7) & 0x7F));
+
+			id++;
 		}
 
 		run -= chunk;
 	}
+
+	*idx = id;
 }
 
 static bool ana_send_packet_channels(void)
@@ -204,7 +213,7 @@ static bool ana_send_packet_channels(void)
 		if (cur_sample == prev_sample && run_count < RLE_MAX_RUN) {
 			run_count++;
 		} else {
-			rle_flush_run(self.tx_buf, &buf_idx, prev_sample, run_count);
+			rle_flush_run(self.tx.buf, &buf_idx, prev_sample, run_count);
 
 			/* TODO: interleave analog samples here when ADC is ready
 			 * for (uint32_t a = 0; a < tx.active_analog_ch; a++) {
@@ -215,7 +224,7 @@ static bool ana_send_packet_channels(void)
 
 			/* Flush TX buffer to USB if threshold reached */
 			if (buf_idx + FLUSH_THRESHOLD > TX_BUF_SIZE) {
-				if (!ana_send_bytes(self.tx_buf, buf_idx)) {
+				if (!ana_send_bytes(self.tx.buf, buf_idx)) {
 					return false; /* disconnected */
 				}
 				total_sent += buf_idx;
@@ -227,10 +236,10 @@ static bool ana_send_packet_channels(void)
 		}
 	}
 
-	rle_flush_run(self.tx_buf, &buf_idx, prev_sample, run_count);
+	rle_flush_run(self.tx.buf, &buf_idx, prev_sample, run_count);
 
 	if (buf_idx > 0) {
-		if (!ana_send_bytes(self.tx_buf, buf_idx)) {
+		if (!ana_send_bytes(self.tx.buf, buf_idx)) {
 			return false;
 		}
 		total_sent += buf_idx;
@@ -259,7 +268,8 @@ static void run_capture(bool continuous)
 	do {
 		memset(config->dma.dma_buffer, 0, config->module.samples * sizeof(uint16_t));
 
-		ana_capture_data_start(config->module.samples, config->module.sample_rate_hz, self.analog_mask);
+		ana_capture_data_start(config->module.samples, config->module.sample_rate_hz,
+				       self.analog_mask);
 
 		bool ok = ana_send_packet_channels();
 
@@ -282,9 +292,9 @@ static void handle_identify(void)
 
 static void handle_set_sample_rate(void)
 {
-	uint32_t rate = (uint32_t)strtol(&self.cmd_str[1], &end_ptr, 10);
+	uint32_t rate = (uint32_t)strtol((char *)&self.cmd_str[1], &self.end_ptr, 10);
 
-	if (*end_ptr != '\0') {
+	if (self.end_ptr == NULL || *(self.end_ptr) != '\0') {
 		log_warn("sigrok", "Invalid sample rate: %s", &self.cmd_str[1]);
 		return;
 	}
@@ -308,9 +318,9 @@ static void handle_set_sample_rate(void)
 
 static void handle_set_sample_limit(void)
 {
-	uint32_t limit = (uint32_t)strtol(&self.cmd_str[1], &end_ptr, 10);
+	uint32_t limit = (uint32_t)strtol((char *)&self.cmd_str[1], &self.end_ptr, 10);
 
-	if (*end_ptr != '\0') {
+	if (self.end_ptr == NULL || *(self.end_ptr) != '\0') {
 		log_warn("sigrok", "Invalid sample limit: %s", &self.cmd_str[1]);
 		return;
 	}
@@ -328,9 +338,9 @@ static void handle_set_sample_limit(void)
 
 static void handle_get_analog_scale(void)
 {
-	int ch = (int)strtol(&self.cmd_str[1], &end_ptr, 10);
+	int ch = (int)strtol((char *)&self.cmd_str[1], &self.end_ptr, 10);
 
-	if (*end_ptr != '\0') {
+	if (self.end_ptr == NULL || *(self.end_ptr) != '\0') {
 		log_warn("sigrok", "Invalid analog scale channel");
 		ana_send_response("ERR");
 		return;
@@ -346,11 +356,11 @@ static void handle_get_analog_scale(void)
 static void handle_set_analog_channel(void)
 {
 	int enable = self.cmd_str[1] - '0';
-	int ch = (int)strtol(&self.cmd_str[2], &end_ptr, 10);
+	int ch = (int)strtol((char *)&self.cmd_str[2], &self.end_ptr, 10);
 
-	if (*end_ptr != '\0') {
+	if (self.end_ptr == NULL || *self.end_ptr != '\0') {
 		log_warn("sigrok", "Invalid analog channel: %s", &self.cmd_str[2]);
-		return;
+		return;	
 	}
 
 	if (ch >= 0 && ch <= 2) {
@@ -366,9 +376,9 @@ static void handle_set_analog_channel(void)
 static void handle_set_digital_channel(void)
 {
 	int enable = self.cmd_str[1] - '0';
-	int ch = (int)strtol(&self.cmd_str[2], &end_ptr, 10);
+	int ch = (int)strtol((char *)&self.cmd_str[2], &self.end_ptr, 10);
 
-	if (*end_ptr != '\0') {
+	if (self.end_ptr == NULL || *self.end_ptr != '\0') {
 		log_warn("sigrok", "Invalid digital channel: %s", &self.cmd_str[2]);
 		return;
 	}
@@ -431,9 +441,10 @@ void ana_sigrok_handle_process_byte(uint8_t received_command)
 	if (received_command == '\r' || received_command == '\n') {
 		self.cmd_str[self.cmd_str_index] = '\0';
 
-		strcpy(self.response, "*");
+		strcpy((char *)self.response, "*");
 
-		for (size_t i = 0; i < SIGROK_COMMAND_COUNT; i++) {			/* Buffer overflow — discard and reset */
+		for (size_t i = 0; i < SIGROK_COMMAND_COUNT;
+		     i++) { /* Buffer overflow — discard and reset */
 			if (self.cmd_str[0] == sigrok_commands[i].command) {
 				sigrok_commands[i].handler();
 				break;
@@ -441,17 +452,15 @@ void ana_sigrok_handle_process_byte(uint8_t received_command)
 		}
 
 		if (self.response[0] != '\0') {
-			ana_send_response(self.response);
+			ana_send_response((char *)self.response);
 		}
 
 		self.cmd_str_index = 0;
 
+	} else if (self.cmd_str_index < (int)(sizeof(self.cmd_str) - 1)) {
+		self.cmd_str[self.cmd_str_index++] = (char)received_command;
 	} else {
-		if (self.cmd_str_index < (int)(sizeof(self.cmd_str) - 1)) {
-			self.cmd_str[self.cmd_str_index++] = (char)received_command;
-		} else {
-			log_warn("sigrok", "Command buffer overflow, resetting");
-			self.cmd_str_index = 0;
-		}
+		log_warn("sigrok", "Command buffer overflow, resetting");
+		self.cmd_str_index = 0;
 	}
 }

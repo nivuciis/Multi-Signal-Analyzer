@@ -53,6 +53,7 @@
 #define SIGROK_IDENT_STRING "SRPICO,A031D16,02"
 
 static struct SIGROK_HANDLER {
+	struct pulseview_sample cfg;
 	struct {
 		uint32_t bytes_per_dig_sample; /**< Bytes needed per digital sample (1 or 2) */
 		uint32_t active_analog_ch;     /**< Number of enabled analog channels */
@@ -82,6 +83,11 @@ static struct SIGROK_HANDLER {
 	.cmd_str = {0},
 	.response = {0},
 	.tx = {0},
+	.cfg =
+		{
+			.sample_rate_hz = 5000,
+			.samples = 1000,
+		},
 };
 
 typedef struct {
@@ -254,24 +260,24 @@ static bool ana_send_packet_channels(void)
 
 static void run_capture(bool continuous)
 {
+	bool ok;
+	memset(self.response, 0, sizeof(char)*64);
 	self.response[0] = '\0';
 
 	struct ana_module_system *config = ana_channels_get_module();
 
-	config->module.samples = self.num_samples;
-	ana_module_set_sample_rate(config, self.sample_rate);
+	ana_module_set_sample_rate(config);
 
 	tx_init();
 
 	ana_led_set_status(LED_STATUS_CAPTURING);
 
 	do {
-		memset(config->dma.dma_buffer, 0, config->module.samples * sizeof(uint16_t));
+		memset(config->dma.dma_buffer, 0, self.cfg.samples * sizeof(uint16_t) - 1);
 
-		ana_capture_data_start(config->module.samples, config->module.sample_rate_hz,
-				       self.analog_mask);
+		ana_capture_data_start(config);
 
-		bool ok = ana_send_packet_channels();
+		ok = ana_send_packet_channels();
 
 		if (!ok) {
 			ana_send_response("!!!");
@@ -312,8 +318,8 @@ static void handle_set_sample_rate(void)
 		rate = SIGROK_SAMPLE_RATE_MAX;
 	}
 
-	self.sample_rate = rate;
-	log_inf("sigrok", "Sample rate set: %lu Hz", (unsigned long)self.sample_rate);
+	self.cfg.sample_rate_hz = rate;
+	log_inf("sigrok", "Sample rate set: %lu Hz", (unsigned long)self.cfg.sample_rate_hz);
 }
 
 static void handle_set_sample_limit(void)
@@ -332,8 +338,8 @@ static void handle_set_sample_limit(void)
 		limit = 1;
 	}
 
-	self.num_samples = limit;
-	log_inf("sigrok", "Sample limit set: %lu", (unsigned long)self.num_samples);
+	self.cfg.samples = limit;
+	log_inf("sigrok", "Sample limit set: %lu", (unsigned long)self.cfg.samples);
 }
 
 static void handle_get_analog_scale(void)
@@ -360,7 +366,7 @@ static void handle_set_analog_channel(void)
 
 	if (self.end_ptr == NULL || *self.end_ptr != '\0') {
 		log_warn("sigrok", "Invalid analog channel: %s", &self.cmd_str[2]);
-		return;	
+		return;
 	}
 
 	if (ch >= 0 && ch <= 2) {
@@ -406,7 +412,7 @@ static void handle_fixed_capture(void)
  */
 static void handle_continuous_capture(void)
 {
-	run_capture(true);
+	run_capture(false);
 }
 
 static const sigrok_command_t sigrok_commands[] = {
@@ -431,6 +437,7 @@ void ana_sigrok_handle_init(void)
 void ana_sigrok_handle_process_byte(uint8_t received_command)
 {
 	memset(self.response, 0, sizeof(self.response));
+	self.response[0] = '\0';
 
 	if (received_command == '*') {
 		ana_sigrok_handle_init();
@@ -443,8 +450,7 @@ void ana_sigrok_handle_process_byte(uint8_t received_command)
 
 		strcpy((char *)self.response, "*");
 
-		for (size_t i = 0; i < SIGROK_COMMAND_COUNT;
-		     i++) { /* Buffer overflow — discard and reset */
+		for (size_t i = 0; i < SIGROK_COMMAND_COUNT; i++) {
 			if (self.cmd_str[0] == sigrok_commands[i].command) {
 				sigrok_commands[i].handler();
 				break;
@@ -457,10 +463,16 @@ void ana_sigrok_handle_process_byte(uint8_t received_command)
 
 		self.cmd_str_index = 0;
 
-	} else if (self.cmd_str_index < (int)(sizeof(self.cmd_str) - 1)) {
-		self.cmd_str[self.cmd_str_index++] = (char)received_command;
+	} else if (self.cmd_str_index < 31) {
+		self.cmd_str[self.cmd_str_index] = (char)received_command;
+		self.cmd_str_index++;
 	} else {
 		log_warn("sigrok", "Command buffer overflow, resetting");
 		self.cmd_str_index = 0;
 	}
+}
+
+struct pulseview_sample *ana_sigrok_get_sample_config()
+{
+	return &self.cfg;
 }

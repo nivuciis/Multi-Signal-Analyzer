@@ -21,4 +21,10 @@
   */
  #define DEBUG 0
 
+ /**
+ * @brief Maximum number of samples to capture in debug mode
+ *
+ */
+#define MAX_SAMPLES_FOR_DEBUG 1024
+
  #endif /* DEBUG_H */

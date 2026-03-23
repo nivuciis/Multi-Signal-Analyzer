@@ -46,6 +46,15 @@ enum SIGROK_PROTOCOL_COMMANDS {
 };
 
 /**
+ * @brief Sample configuration from pulseview
+ * 
+ */
+struct pulseview_sample_config {
+	uint32_t sample_rate_hz;
+	uint32_t samples;
+};
+
+/**
  * @brief Initialize the Sigrok protocol handler.
  */
 void ana_sigrok_handle_init(void);
@@ -56,5 +65,12 @@ void ana_sigrok_handle_init(void);
  * @param received_command Byte received from the host.
  */
 void ana_sigrok_handle_process_byte(uint8_t received_command);
+
+/**
+ * @brief Take the configured sample parameters to configure the system.
+ * 
+ * @return struct pulseview_sample_config Pointer to the current sample configuration structure
+ */
+struct pulseview_sample_config* ana_sigrok_get_sample_config(void);
 
 #endif /* SIGROK_HANDLER_H */

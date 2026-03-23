@@ -13,6 +13,8 @@
 #ifndef MODULE_H
 #define MODULE_H
 
+#include "sigrok_handler.h"
+
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -33,8 +35,6 @@
  *
  */
 struct ana_module_config {
-	uint32_t sample_rate_hz; /**< Sample rate in Hz */
-	uint16_t samples;            /**< Number of samples */
 	uint16_t mask;           /**< Pin mask to sump protocol*/
 	uint8_t pin_base;           /**< Base GPIO pin number */
 	uint8_t pin_count;          /**< Number of GPIO pins */
@@ -126,5 +126,5 @@ bool ana_module_pio_dma_is_busy(struct ana_module_system *config);
  * @param config Structure referencing the module configuration
  * @param sample_rate_hz Sample rate in Hz
  */
-void ana_module_set_sample_rate(struct ana_module_system *config, uint32_t sample_rate_hz);
+void ana_module_set_sample_rate(struct ana_module_system *config);
 #endif /* MODULE_H */

@@ -12,13 +12,14 @@
  *******************************************************************/
 
 #include "capture_data.h"
+#include "channels.h"
 #include "led.h"
 #include "sigrok_handler.h"
 
+#include <hardware/timer.h>
 #include <pico/stdlib.h>
 #include <pico/time.h>
 #include <tusb.h>
-#include <hardware/timer.h>
 
 static char buf[64];
 
@@ -26,7 +27,7 @@ static char buf[64];
  * @brief Callback to synchronize the LED status with the USB connection state
  *
  */
-static bool ana_sync_led_with_usb_connnection(struct repeating_timer* rt)
+static bool ana_sync_led_with_usb_connnection(struct repeating_timer *rt)
 {
 	bool is_usb_connected = tud_cdc_connected();
 	ana_led_set_status((is_usb_connected) ? LED_STATUS_CONNECTED : LED_STATUS_OFF);
@@ -38,13 +39,15 @@ int main()
 	ana_led_init();
 	tusb_init();
 	ana_sigrok_handle_init();
+	ana_channels_init(pio0);
 
-	if (ana_capture_init() != PICO_OK) {
+	struct repeating_timer usb_conection_timer;
+
+	if (ana_capture_init(ana_channels_get_module()) != PICO_OK) {
 		ana_led_set_status(LED_STATUS_ERROR);
 		return PICO_ERROR_IO;
 	}
-	struct repeating_timer usb_conection_timer;
-
+	
 	add_repeating_timer_ms(100, ana_sync_led_with_usb_connnection, NULL, &usb_conection_timer);
 
 	while (1) {
@@ -57,7 +60,6 @@ int main()
 			}
 		}
 		__wfi();
-
 	}
 
 	return 0;

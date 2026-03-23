@@ -11,12 +11,17 @@
  *******************************************************************/
 #include "log.h"
 #include "module.h"
+#include "sigrok_handler.h"
+
+#include <stdint.h>
+
 #include <hardware/pio.h>
 
 void ana_module_pio_init(struct ana_module_system *config)
 {
 	log_debug(config->module.name, "Initializing PIO...");
 
+	struct pulseview_sample_config *cfg = ana_sigrok_get_sample_config();
 	int pin;
 
 	config->pio.sm = pio_claim_unused_sm(config->pio.instance, true);
@@ -29,7 +34,7 @@ void ana_module_pio_init(struct ana_module_system *config)
 	for (int i = 0; i < config->module.pin_count; i++) {
 		pin = config->module.pin_base + i;
 		pio_gpio_init(config->pio.instance, pin);
-		gpio_pull_down(pin);
+		gpio_pull_up(pin);
 	}
 
 	pio_sm_set_consecutive_pindirs(config->pio.instance, config->pio.sm,
@@ -39,7 +44,7 @@ void ana_module_pio_init(struct ana_module_system *config)
 	sm_config_set_in_pins(&sm_cfg, config->module.pin_base);
 	sm_config_set_in_shift(&sm_cfg, false, true, config->module.pin_count);
 
-	float clkdiv = clock_get_hz(clk_sys) / (float)config->module.sample_rate_hz;
+	float clkdiv = clock_get_hz(clk_sys) / (float)cfg->sample_rate_hz;
 	sm_config_set_clkdiv(&sm_cfg, clkdiv);
 
 	sm_config_set_fifo_join(&sm_cfg, PIO_FIFO_JOIN_RX);
@@ -65,6 +70,8 @@ void ana_module_dma_init(struct ana_module_system *config)
 
 void ana_module_pio_dma_start(struct ana_module_system *config)
 {
+	struct pulseview_sample_config *cfg = ana_sigrok_get_sample_config();
+
 	if (config->dma.callback) {
 		irq_set_exclusive_handler(DMA_IRQ_0, config->dma.callback);
 		irq_set_enabled(DMA_IRQ_0, true);
@@ -75,9 +82,10 @@ void ana_module_pio_dma_start(struct ana_module_system *config)
 
 	dma_channel_configure(config->dma.instance, &config->dma.instance_cfg,
 			      config->dma.dma_buffer, &config->pio.instance->rxf[config->pio.sm],
-			      config->module.samples, false);
+			      cfg->samples, false);
 
 	dma_channel_start(config->dma.instance);
+	pio_sm_set_enabled(config->pio.instance, config->pio.sm, true);
 }
 
 void ana_module_pio_dma_wait(struct ana_module_system *config)
@@ -105,9 +113,9 @@ void ana_module_pio_dma_abort(struct ana_module_system *config)
 	config->dma.has_complete = true;
 }
 
-void ana_module_set_sample_rate(struct ana_module_system *config, uint32_t sample_rate_hz)
+void ana_module_set_sample_rate(struct ana_module_system *config)
 {
-	config->module.sample_rate_hz = sample_rate_hz;
-	float clkdiv = clock_get_hz(clk_sys) / (float)sample_rate_hz;
+	struct pulseview_sample_config *cfg = ana_sigrok_get_sample_config();
+	float clkdiv = clock_get_hz(clk_sys) / (float)cfg->sample_rate_hz;
 	pio_sm_set_clkdiv(config->pio.instance, config->pio.sm, clkdiv);
 }

@@ -12,10 +12,13 @@
 #include "channels.h"
 #include "capture.pio.h"
 #include "module.h"
+#include "debug.h"
 
 #include <hardware/pio.h>
 
 #define MODULE_NAME "Channels"
+
+static uint16_t digital_channel_buffer[MAX_SAMPLES_FOR_DEBUG];
 
 struct ana_module_system channels = {
 	.module =
@@ -23,9 +26,7 @@ struct ana_module_system channels = {
 			.name = MODULE_NAME,
 			.pin_base = PICO_DEFAULT_CHANNELS_PIN_BASE,
 			.pin_count = PICO_DEFAULT_CHANNELS_PIN_COUNT,
-			.samples = 0,
 			.mask = 0xFFF0, /**< Default mask to select the first 12 bits/channels */
-			.sample_rate_hz = 1,
 		},
         .pio = {0},
         .dma = {0},
@@ -34,9 +35,10 @@ struct ana_module_system channels = {
 void ana_channels_init(PIO pio)
 {
     channels.pio.instance = pio;
-    channels.pio.sm = pio_claim_unused_sm(pio, true);
     channels.pio.pio_program = &capture_prog_program;
     channels.pio.get_default_cfg_func = (pio_sm_config (*)(uint8_t))capture_prog_program_get_default_config;
+
+	channels.dma.dma_buffer = digital_channel_buffer;
 
     ana_module_pio_init(&channels);
     ana_module_dma_init(&channels);

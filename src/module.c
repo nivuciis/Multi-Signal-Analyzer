@@ -21,7 +21,7 @@ void ana_module_pio_init(struct ana_module_system *config)
 {
 	log_debug(config->module.name, "Initializing PIO...");
 
-	struct pulseview_sample *cfg = ana_sigrok_get_sample_config();
+	struct pulseview_sample_config *cfg = ana_sigrok_get_sample_config();
 	int pin;
 
 	config->pio.sm = pio_claim_unused_sm(config->pio.instance, true);
@@ -70,7 +70,7 @@ void ana_module_dma_init(struct ana_module_system *config)
 
 void ana_module_pio_dma_start(struct ana_module_system *config)
 {
-	struct pulseview_sample *cfg = ana_sigrok_get_sample_config();
+	struct pulseview_sample_config *cfg = ana_sigrok_get_sample_config();
 
 	if (config->dma.callback) {
 		irq_set_exclusive_handler(DMA_IRQ_0, config->dma.callback);
@@ -115,7 +115,7 @@ void ana_module_pio_dma_abort(struct ana_module_system *config)
 
 void ana_module_set_sample_rate(struct ana_module_system *config)
 {
-	struct pulseview_sample *cfg = ana_sigrok_get_sample_config();
+	struct pulseview_sample_config *cfg = ana_sigrok_get_sample_config();
 	float clkdiv = clock_get_hz(clk_sys) / (float)cfg->sample_rate_hz;
 	pio_sm_set_clkdiv(config->pio.instance, config->pio.sm, clkdiv);
 }

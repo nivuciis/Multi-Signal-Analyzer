@@ -53,7 +53,7 @@
 #define SIGROK_IDENT_STRING "SRPICO,A031D16,02"
 
 static struct SIGROK_HANDLER {
-	struct pulseview_sample cfg;
+	struct pulseview_sample_config cfg;
 	struct {
 		uint32_t bytes_per_dig_sample; /**< Bytes needed per digital sample (1 or 2) */
 		uint32_t active_analog_ch;     /**< Number of enabled analog channels */
@@ -261,7 +261,7 @@ static bool ana_send_packet_channels(void)
 static void run_capture(bool continuous)
 {
 	bool ok;
-	memset(self.response, 0, sizeof(char)*64);
+	memset(self.response, 0, sizeof(self.response));
 	self.response[0] = '\0';
 
 	struct ana_module_system *config = ana_channels_get_module();
@@ -463,7 +463,7 @@ void ana_sigrok_handle_process_byte(uint8_t received_command)
 
 		self.cmd_str_index = 0;
 
-	} else if (self.cmd_str_index < 31) {
+	} else if (self.cmd_str_index < sizeof(self.cmd_str) - 1) {
 		self.cmd_str[self.cmd_str_index] = (char)received_command;
 		self.cmd_str_index++;
 	} else {
@@ -472,7 +472,7 @@ void ana_sigrok_handle_process_byte(uint8_t received_command)
 	}
 }
 
-struct pulseview_sample *ana_sigrok_get_sample_config()
+struct pulseview_sample_config *ana_sigrok_get_sample_config()
 {
 	return &self.cfg;
 }

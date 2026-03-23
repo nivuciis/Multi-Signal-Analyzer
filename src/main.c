@@ -16,7 +16,6 @@
 #include "led.h"
 #include "sigrok_handler.h"
 
-#include <arm_acle.h>
 #include <hardware/timer.h>
 #include <pico/stdlib.h>
 #include <pico/time.h>

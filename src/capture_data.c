@@ -19,7 +19,7 @@
 #define DIGITAL_CHANNEL_SIZE 12
 #define ANALOG_CHANNEL_SIZE  3
 
-static struct pulseview_sample *cfg;
+static struct pulseview_sample_config *cfg;
 
 int ana_capture_init(struct ana_module_system *config)
 {

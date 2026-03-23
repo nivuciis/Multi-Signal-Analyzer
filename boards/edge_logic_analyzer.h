@@ -114,6 +114,15 @@ pico_board_cmake_set(PICO_PLATFORM, rp2350)
 #ifndef PICO_DEFAULT_ADC_CHANNEL_3
 #define PICO_DEFAULT_ADC_CHANNEL_3 45
 #endif
+#ifndef PICO_DEFAULT_ADC_VOLTAGE_DIVIDER
+#define PICO_DEFAULT_ADC_VOLTAGE_DIVIDER 1
+#endif
+#ifndef PICO_DEFAULT_ADC_PIN_BASE
+#define PICO_DEFAULT_ADC_PIN_BASE 45
+#endif
+#ifndef PICO_DEFAULT_ADC_PIN_COUNT
+#define PICO_DEFAULT_ADC_PIN_COUNT 3
+#endif
 
 /**
  * @brief Flash configuration

@@ -15,14 +15,20 @@
 #include "channels.h"
 #include "led.h"
 #include "sigrok_handler.h"
+#include "adc.h"
 
 #include <hardware/timer.h>
 #include <pico/stdlib.h>
 #include <pico/time.h>
 #include <tusb.h>
 
-static char buf[64];
+/* Remove when the max samples is defined @JoaoMatheusND */
+#define MOCKED_ANALOG_SAMPLES 1024
+static double mock_adc_buf_chan1[MOCKED_ANALOG_SAMPLES];
+static double mock_adc_buf_chan2[MOCKED_ANALOG_SAMPLES];
+static double mock_adc_buf_chan3[MOCKED_ANALOG_SAMPLES];
 
+static char buf[64];
 /**
  * @brief Callback to synchronize the LED status with the USB connection state
  *
@@ -40,6 +46,8 @@ int main()
 	tusb_init();
 	ana_sigrok_handle_init();
 	ana_channels_init(pio0);
+	ana_adc_init();
+	ana_adc_set_buffers(mock_adc_buf_chan1, mock_adc_buf_chan2, mock_adc_buf_chan3);
 
 	struct repeating_timer usb_conection_timer;
 

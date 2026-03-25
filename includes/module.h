@@ -35,11 +35,11 @@
  *
  */
 struct ana_module_config {
-	uint16_t mask;           /**< Pin mask to sump protocol*/
-	uint8_t pin_base;           /**< Base GPIO pin number */
-	uint8_t pin_count;          /**< Number of GPIO pins */
-	char *name;              /**< Name of the module */
- };
+	uint16_t mask;     /**< Pin mask to sump protocol*/
+	uint8_t pin_base;  /**< Base GPIO pin number */
+	uint8_t pin_count; /**< Number of GPIO pins */
+	char *name;        /**< Name of the module */
+};
 
 /**
  * @brief Configuration structure for DMA
@@ -47,7 +47,7 @@ struct ana_module_config {
  */
 struct ana_module_dma {
 	uint16_t *dma_buffer;            /**< DMA buffer pointer */
-	uint8_t instance;                   /**< DMA channel number */
+	uint8_t instance;                /**< DMA channel number */
 	volatile bool has_complete;      /**< DMA completion flag */
 	void (*callback)(void);          /**< DMA callback function */
 	dma_channel_config instance_cfg; /**< DMA channel configuration */
@@ -57,10 +57,11 @@ struct ana_module_dma {
  * @brief Configuration structure for PIO
  *
  */
-struct  ana_module_pio {
+struct ana_module_pio {
 	PIO instance;                     /**< PIO instance */
-	uint8_t sm;                          /**< State machine number */
-	uint8_t pio_offset;                  /**< Offset of the PIO program */
+	uint8_t sm;                       /**< State machine number */
+	uint8_t pio_offset;               /**< Offset of the PIO program */
+	uint8_t jmp_pin;                  /**< Pin used for conditional jumps in the PIO program */
 	const pio_program_t *pio_program; /**< Pointer to the PIO program */
 	pio_sm_config (*get_default_cfg_func)(
 		uint8_t offset); /**< Function to get default state machine configuration */
@@ -122,9 +123,24 @@ bool ana_module_pio_dma_is_busy(struct ana_module_system *config);
 
 /**
  * @brief Set the sample rate for the module
- * 
+ *
  * @param config Structure referencing the module configuration
  * @param sample_rate_hz Sample rate in Hz
  */
 void ana_module_set_sample_rate(struct ana_module_system *config);
+
+/**
+ * @brief Reload the PIO program with a new program and optional jmp_pin.
+ *
+ * @note Disables the SM, removes the old program, loads the new one and
+ * re-initialises the state machine.  Call before each capture when the
+ * trigger type or channel may have changed.
+ *
+ * @param config          Structure referencing the module configuration
+ * @param new_program     New PIO program to load
+ * @param new_cfg_func    Default-config getter for the new program
+ * @param jmp_pin         GPIO used by jmp pin (0 = not used)
+ */
+void ana_module_pio_reload(struct ana_module_system *config, const pio_program_t *new_program,
+			   pio_sm_config (*new_cfg_func)(uint8_t offset), uint8_t jmp_pin);
 #endif /* MODULE_H */

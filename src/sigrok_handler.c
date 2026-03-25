@@ -76,6 +76,7 @@ static struct SIGROK_HANDLER {
 	int8_t cmd_str[32];
 	int8_t response[64];
 	char *end_ptr;
+	struct SIGROK_TRIGGER trigger_config;
 } self = {
 	.sample_rate = 5000,
 	.num_samples = 1024,
@@ -92,6 +93,11 @@ static struct SIGROK_HANDLER {
 		{
 			.sample_rate_hz = 5000,
 			.samples = 1000,
+		},
+	.trigger_config =
+		{
+			.trigger_mask = 0x0000,
+			.trigger_type = -1,
 		},
 };
 
@@ -241,6 +247,10 @@ static bool ana_send_packet_channels(uint32_t chunk_samples, uint32_t *bytes_out
 static void run_capture(bool continuous)
 {
 	struct ana_module_system *config = ana_channels_get_module();
+
+	ana_channels_apply_trigger();
+
+	ana_module_set_sample_rate(config);
 
 	tx_init();
 	ana_led_set_status(LED_STATUS_CAPTURING);
@@ -401,9 +411,64 @@ static void handle_continuous_capture(void)
 	run_capture(true);
 }
 
-/* ------------------------------------------------------------------ */
-/* Dispatch table                                                      */
-/* ------------------------------------------------------------------ */
+static void handle_set_trigger(void)
+{
+	if (self.cmd_str_index < 2) {
+		log_warn("sigrok", "Trigger command too short");
+		return;
+	}
+
+	char type_char = (char)self.cmd_str[1];
+
+	if (type_char == 'n') {
+		self.trigger_config.trigger_mask = 0;
+		log_inf("sigrok", "Trigger disabled");
+		return;
+	}
+
+	int ch = (int)strtol((char *)&self.cmd_str[2], &self.end_ptr, 10);
+
+	if (self.end_ptr == NULL || *self.end_ptr != '\0') {
+		log_warn("sigrok", "Invalid trigger channel: %s", &self.cmd_str[2]);
+		return;
+	}
+
+	if (ch < 0 || ch >= PICO_DEFAULT_CHANNELS_PIN_COUNT) {
+		log_warn("sigrok", "Trigger channel out of range: %d", ch);
+		return;
+	}
+
+	enum ana_trigger_type trig_type;
+	switch (type_char) {
+	case 'r':
+		trig_type = ANA_TRIGGER_EDGE_RISE;
+		break;
+	case 'f':
+		trig_type = ANA_TRIGGER_EDGE_FALL;
+		break;
+	case 'b':
+		trig_type = ANA_TRIGGER_EDGE_BOTH;
+		break;
+	case 'l':
+		trig_type = ANA_TRIGGER_LEVEL_LOW;
+		break;
+	case 'h':
+		trig_type = ANA_TRIGGER_LEVEL_HIGH;
+		break;
+	default:
+		log_warn("sigrok", "Unknown trigger type: %c", type_char);
+		return;
+	}
+
+	self.trigger_config.trigger_mask = (uint16_t)(1u << ch);
+	self.trigger_config.trigger_type[ch] = trig_type;
+	log_inf("sigrok", "Trigger set: ch %d type '%c'", ch, type_char);
+}
+
+struct SIGROK_TRIGGER *ana_sigrok_get_trigger(void)
+{
+	return &self.trigger_config;
+}
 
 static const sigrok_command_t sigrok_commands[] = {
 	{SIGROK_CMD_IDENTIFY, handle_identify},
@@ -414,6 +479,7 @@ static const sigrok_command_t sigrok_commands[] = {
 	{SIGROK_CMD_SET_DIGITAL_CHANNEL, handle_set_digital_channel},
 	{SIGROK_CMD_FIXED_CAPTURE, handle_fixed_capture},
 	{SIGROK_CMD_CONTINUOUS_CAPTURE, handle_continuous_capture},
+	{SIGROK_CMD_SET_TRIGGER, handle_set_trigger}
 };
 
 #define SIGROK_COMMAND_COUNT (sizeof(sigrok_commands) / sizeof(sigrok_commands[0]))
@@ -426,6 +492,7 @@ void ana_sigrok_handle_init(void)
 {
 	self.cmd_str_index = 0;
 	memset(self.cmd_str, 0, sizeof(self.cmd_str));
+	self.trigger_config.trigger_mask = 0;
 }
 
 void ana_sigrok_handle_process_byte(uint8_t received_command)

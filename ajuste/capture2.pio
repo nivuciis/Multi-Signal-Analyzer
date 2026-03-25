@@ -1,0 +1,221 @@
+/** -------------------------------------------------------------
+ * @file capture.pio
+ * @brief PIO programs for capturing 12 digital signals from GPIO pins.
+ *
+ * Architecture
+ * ============
+ * Every program captures exatamente N amostras, onde N-1 é carregado
+ * via PULL no registrador X antes do SM ser habilitado (pelo C driver).
+ * O PIO decrementa X a cada amostra e dispara IRQ 0 ao terminar,
+ * permitindo que o DMA e o firmware sincronizem o fim da captura de
+ * forma determinística — mesmo padrão do repo base logicanalyzer.
+ *
+ * Convenção de pinos
+ * ==================
+ *   in  pins  → pin_base (12 pinos de dados)
+ *   jmp pin   → configurado via sm_config_set_jmp_pin() para o pino de trigger
+ *
+ * Uso pelo driver C
+ * =================
+ *   1. Carregar o programa correto via ana_module_pio_reload()
+ *   2. Fazer PULL do valor (samples - 1) para o TX FIFO antes de habilitar o SM
+ *   3. Habilitar o SM — o PIO faz o resto
+ *   4. Aguardar IRQ 0 (ou fim do DMA) para saber que a captura terminou
+ *
+ * @note  in null, 4  é usado para completar os 16 bits do autopush
+ *        (12 bits de dados + 4 bits de padding = 1 halfword por amostra).
+ *
+ * @author   Vinicius Rafael Marques de Carvalho <vinicius.carvalho@edge.ufal.br>
+ * @author   João Matheus Nascimento Dias <joao.dias@edge.ufal.br>
+ * @version  1.0
+ * @date     27/04/2026
+ * @copyright Copyright (c) 2026
+ *  ------------------------------------------------------------*/
+
+
+; ─────────────────────────────────────────────────────────────────────────────
+; capture_prog_simple
+;
+; Captura livre, sem trigger. Começa imediatamente ao ser habilitado.
+;
+; Setup pelo driver:
+;   pio_sm_put_blocking(pio, sm, samples - 1);   // carrega X
+; ─────────────────────────────────────────────────────────────────────────────
+.program capture_prog_simple
+
+    pull              ; X = samples - 1
+    mov x, osr
+
+.wrap_target
+    in pins, 12       ; captura 12 pinos
+    in null, 4        ; padding → autopush (16 bits)
+    jmp x-- LOOP_OK   ; decrementa contador, continua se X >= 0
+    irq 0             ; captura concluída → notifica firmware
+LOCK:
+    jmp LOCK          ; bloqueia o SM (DMA para naturalmente)
+LOOP_OK:
+.wrap
+
+
+; ─────────────────────────────────────────────────────────────────────────────
+; capture_prog_trigger_rise
+;
+; Aguarda borda de subida no jmp_pin, então captura N amostras.
+;
+; Fluxo:
+;   Estado inicial desconhecido → normaliza para LOW primeiro
+;   LOW → HIGH = borda de subida detectada → inicia captura
+; ─────────────────────────────────────────────────────────────────────────────
+.program capture_prog_trigger_rise
+
+    pull              ; X = samples - 1
+    mov x, osr
+
+    ; Normalização: se o pino já está HIGH, espera cair primeiro
+    jmp pin WAIT_LOW
+
+WAIT_HIGH:
+    jmp pin CAPTURE   ; pino foi para HIGH → borda de subida
+    jmp WAIT_HIGH     ; ainda LOW, aguarda
+
+WAIT_LOW:
+    jmp pin WAIT_LOW  ; gira enquanto HIGH
+    jmp WAIT_HIGH     ; agora LOW → espera a subida
+
+CAPTURE:
+.wrap_target
+    in pins, 12
+    in null, 4
+    jmp x-- LOOP_OK
+    irq 0
+LOCK:
+    jmp LOCK
+LOOP_OK:
+.wrap
+
+
+; ─────────────────────────────────────────────────────────────────────────────
+; capture_prog_trigger_fall
+;
+; Aguarda borda de descida no jmp_pin, então captura N amostras.
+;
+; Fluxo:
+;   Estado inicial desconhecido → normaliza para HIGH primeiro
+;   HIGH → LOW = borda de descida detectada → inicia captura
+; ─────────────────────────────────────────────────────────────────────────────
+.program capture_prog_trigger_fall
+
+    pull              ; X = samples - 1
+    mov x, osr
+
+    ; Normalização: se o pino já está LOW, espera subir primeiro
+    jmp pin WAIT_FALL
+
+WAIT_RISE:
+    jmp pin WAIT_FALL ; pino subiu → agora espera a descida
+    jmp WAIT_RISE     ; ainda LOW → aguarda subida
+
+WAIT_FALL:
+    jmp pin WAIT_FALL ; gira enquanto HIGH
+    ; pino foi para LOW = borda de descida → cai no CAPTURE abaixo
+
+CAPTURE:
+.wrap_target
+    in pins, 12
+    in null, 4
+    jmp x-- LOOP_OK
+    irq 0
+LOCK:
+    jmp LOCK
+LOOP_OK:
+.wrap
+
+
+; ─────────────────────────────────────────────────────────────────────────────
+; capture_prog_trigger_both
+;
+; Captura na PRIMEIRA borda detectada (subida OU descida).
+; Após a captura de N amostras, para. Não alterna ciclicamente.
+;
+; Fluxo:
+;   Lê estado atual do pino para decidir qual borda esperar primeiro.
+;   A primeira transição (em qualquer direção) dispara a captura.
+; ─────────────────────────────────────────────────────────────────────────────
+.program capture_prog_trigger_both
+
+    pull              ; X = samples - 1
+    mov x, osr
+
+    ; Decide por onde começar com base no estado atual do pino
+    jmp pin WAIT_FALL
+
+WAIT_RISE:
+    jmp pin CAPTURE   ; pino foi para HIGH → borda de subida
+    jmp WAIT_RISE
+
+WAIT_FALL:
+    jmp pin WAIT_FALL ; gira enquanto HIGH
+    ; pino foi para LOW → borda de descida → captura
+
+CAPTURE:
+.wrap_target
+    in pins, 12
+    in null, 4
+    jmp x-- LOOP_OK
+    irq 0
+LOCK:
+    jmp LOCK
+LOOP_OK:
+.wrap
+
+
+; ─────────────────────────────────────────────────────────────────────────────
+; capture_prog_trigger_low_level
+;
+; Aguarda o jmp_pin estar em nível LOW, então captura N amostras
+; continuamente enquanto estiver capturando (não relê o nível).
+; ─────────────────────────────────────────────────────────────────────────────
+.program capture_prog_trigger_low_level
+
+    pull              ; X = samples - 1
+    mov x, osr
+
+WAIT_LOW:
+    jmp pin WAIT_LOW  ; gira enquanto HIGH
+
+CAPTURE:
+.wrap_target
+    in pins, 12
+    in null, 4
+    jmp x-- LOOP_OK
+    irq 0
+LOCK:
+    jmp LOCK
+LOOP_OK:
+.wrap
+
+
+; ─────────────────────────────────────────────────────────────────────────────
+; capture_prog_trigger_high_level
+;
+; Aguarda o jmp_pin estar em nível HIGH, então captura N amostras.
+; ─────────────────────────────────────────────────────────────────────────────
+.program capture_prog_trigger_high_level
+
+    pull              ; X = samples - 1
+    mov x, osr
+
+WAIT_HIGH:
+    jmp pin CAPTURE   ; pino está HIGH → inicia
+    jmp WAIT_HIGH
+
+CAPTURE:
+.wrap_target
+    in pins, 12
+    in null, 4
+    jmp x-- LOOP_OK
+    irq 0
+LOCK:
+    jmp LOCK
+LOOP_OK:
+.wrap

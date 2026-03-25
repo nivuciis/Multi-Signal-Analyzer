@@ -28,26 +28,68 @@
 #ifndef SIGROK_HANDLER_H
 #define SIGROK_HANDLER_H
 
+#include "board_def.h"
+
 #include <stdint.h>
+
+#define MAX_NUM_CHANNELS                                                                               \
+PICO_DEFAULT_CHANNELS_PIN_COUNT + PICO_DEFAULT_CAN_PIN_COUNT +                             \
+	PICO_DEFAULT_RS232_PIN_COUNT + PICO_DEFAULT_RS485_PIN_COUNT
 
 /**
  * @brief Command list
- * 
+ *
  */
 enum SIGROK_PROTOCOL_COMMANDS {
-	SIGROK_CMD_IDENTIFY = 'i',           	/** 'i' — Identity query. Firmware responds with capability string. */
-	SIGROK_CMD_SET_SAMPLE_RATE = 'R',    	/** 'R<hz>' — Set sample rate in Hz. Range: 5000–120000000. */
-	SIGROK_CMD_SET_SAMPLE_LIMIT = 'L',   	/** 'L<n>' — Set number of samples to capture (fixed mode). */
-	SIGROK_CMD_GET_ANALOG_SCALE = 'a',   	/** 'a<ch>' — Query analog scale for channel ch (0–2). */
-	SIGROK_CMD_SET_ANALOG_CHANNEL = 'A', 	/** 'A<en><ch>' — Enable (en=1) or disable (en=0) analog channel ch. */
-	SIGROK_CMD_SET_DIGITAL_CHANNEL = 'D',	/** 'D<en><ch>' — Enable (en=1) or disable (en=0) digital channel ch. */
-	SIGROK_CMD_FIXED_CAPTURE = 'F', 	 	/** 'F' — Start fixed capture (exactly L samples). */
-	SIGROK_CMD_CONTINUOUS_CAPTURE = 'C', 	/** 'C' — Start continuous capture (runs until host sends '*'). */
+	SIGROK_CMD_IDENTIFY = 'i',           	/**< 'i' — Identity query. Firmware responds with capability string. */
+	SIGROK_CMD_SET_SAMPLE_RATE = 'R',    	/**< 'R<hz>' — Set sample rate in Hz. Range: 5000–120000000. */
+	SIGROK_CMD_SET_SAMPLE_LIMIT = 'L',   	/**< 'L<n>' — Set number of samples to capture (fixed mode). */
+	SIGROK_CMD_GET_ANALOG_SCALE = 'a',   	/**< 'a<ch>' — Query analog scale for channel ch (0–2). */
+	SIGROK_CMD_SET_ANALOG_CHANNEL = 'A', 	/**< 'A<en><ch>' — Enable (en=1) or disable (en=0) analog channel ch. */
+	SIGROK_CMD_SET_DIGITAL_CHANNEL = 'D',	/**< 'D<en><ch>' — Enable (en=1) or disable (en=0) digital channel ch. */
+	SIGROK_CMD_FIXED_CAPTURE = 'F', 	 	/**< 'F' — Start fixed capture (exactly L samples). */
+	SIGROK_CMD_CONTINUOUS_CAPTURE = 'C', 	/**< 'C' — Start continuous capture (runs until host sends '*'). */
+	SIGROK_CMD_SET_TRIGGER = 't' 			/**< 't<type><ch>' — Set HW trigger. type: r/f/b/1/h/n. ch: 0 is based channel */	
+};
+
+/**
+ * @brief System status for capture and transmission state machine
+ *
+ */
+enum ANA_SYSTEM_STATUS {
+	ANA_SYSTEM_IDLE = 0X00,  /**< System is idle */
+	ANA_SYSTEM_BUSY,         /**< System is busy */
+	ANA_SYSTEM_STARTED,      /**< System has started */
+	ANA_SYSTEM_SENDING,      /**< System is sending data */
+	ANA_SYSTEM_DMA_DONE,     /**< DMA transfer is complete */
+	ANA_SYSTEM_SAMPLES_SENT, /**< Samples have been sent */
+	ANA_SYSTEM_ABORTED,      /**< Transfer was aborted */
+};
+
+/**
+ * @brief Trigger types for the system
+ *
+ */
+enum ana_trigger_type {
+	ANA_TRIGGER_EDGE_RISE,  /**< Rising edge trigger */
+	ANA_TRIGGER_EDGE_FALL,  /**< Falling edge trigger */
+	ANA_TRIGGER_EDGE_BOTH,  /**< Both edges trigger */
+	ANA_TRIGGER_LEVEL_LOW,  /**< Low level trigger */
+	ANA_TRIGGER_LEVEL_HIGH, /**< High level trigger */
+};
+
+/**
+ * @brief System trigger to channels
+ *
+ */
+struct SIGROK_TRIGGER {
+	uint16_t trigger_mask; /**< Bitmask of digital channels involved in the trigger condition */
+	enum ana_trigger_type trigger_type[MAX_NUM_CHANNELS]; /**< Type of trigger */
 };
 
 /**
  * @brief Sample configuration from pulseview
- * 
+ *
  */
 struct pulseview_sample_config {
 	uint32_t sample_rate_hz;
@@ -68,9 +110,16 @@ void ana_sigrok_handle_process_byte(uint8_t received_command);
 
 /**
  * @brief Take the configured sample parameters to configure the system.
- * 
+ *
  * @return struct pulseview_sample_config Pointer to the current sample configuration structure
  */
-struct pulseview_sample_config* ana_sigrok_get_sample_config(void);
+struct pulseview_sample_config *ana_sigrok_get_sample_config(void);
+
+/**
+ * @brief Get the current trigger configuration.
+ *
+ * @return struct SIGROK_TRIGGER* Pointer to the trigger configuration
+ */
+struct SIGROK_TRIGGER *ana_sigrok_get_trigger(void);
 
 #endif /* SIGROK_HANDLER_H */

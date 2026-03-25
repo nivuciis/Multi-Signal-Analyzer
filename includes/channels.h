@@ -28,4 +28,12 @@ void ana_channels_init(PIO pio);
  */
 struct ana_module_system* ana_channels_get_module(void);
 
+/**
+ * @brief Apply the current trigger configuration to the PIO program.
+ *
+ * Must be called before each capture. Reloads the PIO state machine with
+ * the program matching the trigger type stored in the sigrok handler.
+ */
+void ana_channels_apply_trigger(void);
+
 #endif /* CHANNELS_H */

@@ -50,6 +50,7 @@ add_executable(multi_signal_analyzer
 
 include_directories(multi_signal_analyzer
             ${INCLUDE_DIRS}
+            ${CMAKE_CURRENT_LIST_DIR}/boards
         )
 
 pico_set_program_name(multi_signal_analyzer "multi_signal_analyzer")

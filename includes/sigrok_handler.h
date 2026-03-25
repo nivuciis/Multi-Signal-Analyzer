@@ -31,6 +31,12 @@
 #include <stdint.h>
 
 /**
+ * @brief Maximum number of samples per capture, as limited by the protocol.
+ * 
+ */
+#define SIGROK_SAMPLE_LIMIT_MAX 1024U  
+
+/**
  * @brief Command list
  * 
  */

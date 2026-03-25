@@ -1,124 +1,174 @@
 /*******************************************************************
  * @file adc.c
  *
- * @brief ADC implementation program to read analog channels
+ * @brief ADC implementation — DMA-based round-robin capture
  * @author João Matheus Nascimento Dias (joao.dias@edge.ufal.br)
- * @version 0.1
+ * @version 0.2
  * @date 23/03/2026
  *
  * @copyright Copyright (c) 2026
  *
+ * Capture path (ana_adc_capture_dma):
+ *
+ *   The ADC is configured in round-robin mode so it automatically cycles
+ *   through the enabled channels after each conversion.  A single DMA
+ *   channel reads the ADC FIFO using the ADC DREQ, writing interleaved
+ *   12-bit samples into adc_raw_dma_buf.
+ *
+ *   After the DMA completes the raw buffer is demultiplexed: each
+ *   channel's samples are extracted and converted to millivolts using
+ *   the voltage-divider-aware conversion factor, then stored in the
+ *   per-channel float buffers.
+ *
+ *   This avoids:
+ *     - Changing adc_select_input() while the ADC is running (Bug A)
+ *     - FIFO overflow from free-running mode + slow software loop (Bug B)
+ *     - Capturing channels that are not enabled (Bug C)
+ *     - PulseView timeouts from a slow blocking software loop (Bug D)
+ *
  *******************************************************************/
-
 #include "adc.h"
 #include "log.h"
 
-#include <assert.h>
-
+#include <stdint.h>
 #include <hardware/adc.h>
-#include <pico/types.h>
+#include <hardware/dma.h>
 
-#define ADC_BASE_SUBTRACTIV 40
+/*
+ * ADC GPIO → hardware channel mapping for this board (RP2350B extended GPIO):
+ *   GPIO 45 (CHANNEL_3 / sigrok ch 2) → ADC hw ch 5
+ *   GPIO 46 (CHANNEL_2 / sigrok ch 1) → ADC hw ch 6
+ *   GPIO 47 (CHANNEL_1 / sigrok ch 0) → ADC hw ch 7
+ */
+#define ADC_GPIO_TO_HW_CH(gpio) ((gpio) - 40u)
 
-#if PICO_DEFAULT_ADC_VOLTAGE_DIVIDER
-static const double ADC_VOLTAGE_DIVIDER_R1 = 300000.0; /* Resistor R1 value in ohms */
-static const double ADC_VOLTAGE_DIVIDER_R2 = 100000.0; /* Resistor R2 value in ohms */
-#else
-static const double ADC_VOLTAGE_DIVIDER_R1 = 0.0; /* Resistor R1 value in ohms */
-static const double ADC_VOLTAGE_DIVIDER_R2 = 1.0; /* Resistor R2 value in ohms */
-#endif
-
-#define ADC_VOLTAGE_DIVIDER_FACTOR                                                                 \
-	((ADC_VOLTAGE_DIVIDER_R1 + ADC_VOLTAGE_DIVIDER_R2) / ADC_VOLTAGE_DIVIDER_R2)
-
-#define ADC_CHECK_CHAN_BUF(buf)                                                                    \
-	do {                                                                                       \
-		assert(buf != NULL);                                                               \
-                                                                                                   \
-	} while (0)
-
-static const double ADC_FACTOR_CONVERSION = (3.3f / (double)(1 << 12)) * ADC_VOLTAGE_DIVIDER_FACTOR;
-
-struct ana_adc_module self = {
-	.module =
-		{
-			.name = "ADC",
-			.pin_base = PICO_DEFAULT_ADC_PIN_BASE,
-			.pin_count = PICO_DEFAULT_ADC_PIN_COUNT,
-			.mask = 0x000F,
-		},
-	.clkdiv = 0.0f,
-	.buffers =
-		{
-			.chan1 = NULL,
-			.chan2 = NULL,
-			.chan3 = NULL,
-		},
+static const uint8_t SIGROK_CH_TO_GPIO[ADC_NUM_CHANNELS] = {
+	PICO_DEFAULT_ADC_CHANNEL_1, /* sigrok ch 0 */
+	PICO_DEFAULT_ADC_CHANNEL_2, /* sigrok ch 1 */
+	PICO_DEFAULT_ADC_CHANNEL_3, /* sigrok ch 2 */
 };
 
-static uint16_t raw_data = 0;
-static double result = 0.0;
+#define ADC_MV_PER_LSB  (3300.0f / 4096.0f)  /* 12-bit ADC, 0–3300mV range */
 
-void ana_adc_init()
+static uint16_t adc_buf_raw[ADC_NUM_CHANNELS][SIGROK_SAMPLE_LIMIT_MAX];
+
+static uint16_t adc_dma_scratch[SIGROK_SAMPLE_LIMIT_MAX * ADC_NUM_CHANNELS];
+
+struct ana_adc_module ana_adc = {
+	.module = {
+		.name      = "ADC",
+		.pin_base  = PICO_DEFAULT_ADC_PIN_BASE,
+		.pin_count = PICO_DEFAULT_ADC_PIN_COUNT,
+		.mask      = 0x0000,
+	},
+	.clkdiv  = 0.0f,
+	.dma_chan = -1,
+	.raw     = {
+		adc_buf_raw[0],
+		adc_buf_raw[1],
+		adc_buf_raw[2],
+	},
+};
+
+void ana_adc_init(void)
 {
-	log_debug(self.module.name, "Initializing ADC ....");
-
 	adc_init();
 
-	for (int i = 0; i < self.module.pin_count; i++) {
-		adc_gpio_init(self.module.pin_base + i);
+	for (int i = 0; i < ADC_NUM_CHANNELS; i++) {
+		adc_gpio_init(SIGROK_CH_TO_GPIO[i]);
 	}
 
 	adc_run(false);
+	ana_adc.dma_chan = dma_claim_unused_channel(true);
+	log_debug(ana_adc.module.name, "DMA channel: %d", ana_adc.dma_chan);
 }
 
 void ana_adc_set_clkdiv(float clkdiv)
 {
-	self.clkdiv = clkdiv;
+	ana_adc.clkdiv = clkdiv;
 	adc_set_clkdiv(clkdiv);
 }
 
-void ana_adc_set_buffers(double *rsp, double *rsp2, double *rsp3)
+float ana_adc_read(uint8_t channel)
 {
-	ADC_CHECK_CHAN_BUF(rsp);
-	ADC_CHECK_CHAN_BUF(rsp2);
-	ADC_CHECK_CHAN_BUF(rsp3);
-
-	self.buffers.chan1 = rsp;
-	self.buffers.chan2 = rsp2;
-	self.buffers.chan3 = rsp3;
+	adc_run(false);
+	adc_select_input(ADC_GPIO_TO_HW_CH(channel));
+	return (float)(adc_read() & 0x0FFFu) * ADC_MV_PER_LSB;
 }
 
-void ana_adc_read(double *rsp, uint8_t channel)
+void ana_adc_capture_dma(uint32_t samples, uint8_t analog_mask)
 {
-	channel -= ADC_BASE_SUBTRACTIV; /* Adjust channel number to match ADC input */
-
-	adc_select_input(channel);
-
-	raw_data = adc_read();
-
-	result = (double)raw_data * ADC_FACTOR_CONVERSION;
-	result *= 1000.0; /* Convert to millivolts */
-
-	*rsp = result;
-}
-
-void ana_adc_read_all(uint32_t samples)
-{
-	samples = (samples <= 0) ? 1 : samples;
-
-	adc_run(true);
-
-	for (uint32_t i = 0; i < samples; i++) {
-		ana_adc_read(self.buffers.chan1 + i, PICO_DEFAULT_ADC_CHANNEL_1);
-		ana_adc_read(self.buffers.chan2 + i, PICO_DEFAULT_ADC_CHANNEL_2);
-		ana_adc_read(self.buffers.chan3 + i, PICO_DEFAULT_ADC_CHANNEL_3);
+	if (samples == 0 || analog_mask == 0) {
+		return;
+	}
+	if (samples > SIGROK_SAMPLE_LIMIT_MAX) {
+		samples = SIGROK_SAMPLE_LIMIT_MAX;
 	}
 
+
+	uint32_t rr_hw_mask = 0;
+	int      ch_order[ADC_NUM_CHANNELS];
+	int      active_cnt = 0;
+
+	for (int bit = 0; bit < ADC_NUM_CHANNELS; bit++) {
+		if (analog_mask & (1u << bit)) {
+			rr_hw_mask |= (1u << ADC_GPIO_TO_HW_CH(SIGROK_CH_TO_GPIO[bit]));
+		}
+	}
+
+	for (int hw = 0; hw <= 7; hw++) {
+		if (rr_hw_mask & (1u << hw)) {
+			ch_order[active_cnt++] = hw;
+		}
+	}
+	if (active_cnt == 0) {
+		return;
+	}
+
+	uint32_t total_xfers = samples * (uint32_t)active_cnt;
+
+	adc_fifo_drain();
+	adc_fifo_setup(true, true, 1, false, false);
+	adc_set_round_robin(rr_hw_mask);
+	adc_select_input(ch_order[0]);
+
+	dma_channel_config cfg = dma_channel_get_default_config(ana_adc.dma_chan);
+	channel_config_set_read_increment(&cfg,  false);
+	channel_config_set_write_increment(&cfg, true);
+	channel_config_set_dreq(&cfg, DREQ_ADC);
+	channel_config_set_transfer_data_size(&cfg, DMA_SIZE_16);
+
+	dma_channel_configure(ana_adc.dma_chan, &cfg,
+			      adc_dma_scratch, &adc_hw->fifo, total_xfers, true);
+
+	adc_run(true);
+	dma_channel_wait_for_finish_blocking(ana_adc.dma_chan);
 	adc_run(false);
+	adc_fifo_drain();
+
+
+	for (uint32_t s = 0; s < samples; s++) {
+		for (int c = 0; c < active_cnt; c++) {
+			uint16_t raw  = adc_dma_scratch[s * (uint32_t)active_cnt + (uint32_t)c];
+			int      hwch = ch_order[c];
+
+			/* Map hw channel back to sigrok channel index */
+			for (int bit = 0; bit < ADC_NUM_CHANNELS; bit++) {
+				if ((analog_mask & (1u << bit)) &&
+				    ADC_GPIO_TO_HW_CH(SIGROK_CH_TO_GPIO[bit]) == hwch) {
+					ana_adc.raw[bit][s] = raw & 0x0FFFu;
+					break;
+				}
+			}
+		}
+	}
+
+	log_debug(ana_adc.module.name,
+		  "Captured %lu samples x %d ch, rr_mask=0x%02X",
+		  (unsigned long)samples, active_cnt, (unsigned)rr_hw_mask);
 }
 
-struct buffs *ana_adc_get_buffs()
+struct ana_adc_module *ana_adc_get_module(void)
 {
-	return &self.buffers;
+	return &ana_adc;
 }

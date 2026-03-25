@@ -32,7 +32,7 @@ pico_board_cmake_set(PICO_PLATFORM, rp2350)
  * @brief RP2350 variant identifier
  *
  */
-#define PICO_RP2350A 0
+#define PICO_RP2350A 1
 
 /**
  * @brief UART configuration

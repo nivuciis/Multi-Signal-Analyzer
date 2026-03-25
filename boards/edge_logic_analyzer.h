@@ -20,6 +20,8 @@
 #ifndef _BOARDS_EDGE_LOGIC_ANALYSER_H
 #define _BOARDS_EDGE_LOGIC_ANALYSER_H
 
+#include "board_def.h"
+
 pico_board_cmake_set(PICO_PLATFORM, rp2350)
 
 /**
@@ -32,7 +34,7 @@ pico_board_cmake_set(PICO_PLATFORM, rp2350)
  * @brief RP2350 variant identifier
  *
  */
-#define PICO_RP2350A 0
+#define PICO_RP2350A 1
 
 /**
  * @brief UART configuration
@@ -46,59 +48,6 @@ pico_board_cmake_set(PICO_PLATFORM, rp2350)
 #endif
 #ifndef PICO_DEFAULT_UART_RX_PIN
 #define PICO_DEFAULT_UART_RX_PIN 1
-#endif
-
-/**
- * @brief LED configuration
- *
- * @note Does not have PICO_DEFAULT_LED_PIN.
- */
-#ifndef PICO_DEFAULT_LED_PIN
-#define PICO_DEFAULT_LED_PIN 32
-#endif
-
-/**
- * @brief CHANNELS configuration
- *
- */
-#ifndef PICO_DEFAULT_CHANNELS_PIN_BASE
-#define PICO_DEFAULT_CHANNELS_PIN_BASE 8
-#endif
-#ifndef PICO_DEFAULT_CHANNELS_PIN_COUNT
-#define PICO_DEFAULT_CHANNELS_PIN_COUNT 12
-#endif
-
-/**
- * @brief CAN configuration
- *
- */
-#ifndef PICO_DEFAULT_CAN_PIN_BASE
-#define PICO_DEFAULT_CAN_PIN_BASE 35
-#endif
-#ifndef PICO_DEFAULT_CAN_PIN_COUNT
-#define PICO_DEFAULT_CAN_PIN_COUNT 1
-#endif
-
-/**
- * @brief RS232 configuration
- *
- */
-#ifndef PICO_DEFAULT_RS232_PIN_BASE
-#define PICO_DEFAULT_RS232_PIN_BASE 24
-#endif
-#ifndef PICO_DEFAULT_RS232_PIN_COUNT
-#define PICO_DEFAULT_RS232_PIN_COUNT 2
-#endif
-
-/**
- * @brief RS482 configuration
- *
- */
-#ifndef PICO_DEFAULT_RS485_PIN_BASE
-#define PICO_DEFAULT_RS485_PIN_BASE 31
-#endif
-#ifndef PICO_DEFAULT_RS485_PIN_COUNT
-#define PICO_DEFAULT_RS485_PIN_COUNT 1
 #endif
 
 /**

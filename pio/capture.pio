@@ -2,18 +2,75 @@
  * @file capture.pio
  * @brief PIO program for capturing digital signals from GPIO pins 
  *
+ * @note All trigger programs use 'jmp pin', which must be configured
+ *       at runtime via sm_config_set_jmp_pin() to the trigger GPIO.
+ *
  * @author   Vinicius Rafael Marques de Carvalho <vinicius.carvalho@edge.ufal.br>
  * @author   João Matheus Nascimento Dias <joao.dias@edge.ufal.br>
- * @version   0.2
- * @date      09/03/2026
+ * @version   0.4
+ * @date      25/03/2026
  * @copyright Copyright (c) 2026
  *  ------------------------------------------------------------*/
 
-.program capture_prog
+.program capture_prog_simple
 .wrap_target
-LOOP:
-   in pins, 12
-   in null, 4 ; 16 bits (12 from pins + 4 null)
-   ;push block ; Uncommented if not using autopush at SM setup
-   jmp LOOP 
+    in pins, 12
+    in null, 4
+.wrap
+
+.program capture_prog_trigger_rise
+    jmp pin  WAIT_LOW        ; if currently high, first wait for low
+WAIT_HIGH:
+    jmp pin  CAPTURE         ; rising edge detected → start capture
+    jmp      WAIT_HIGH
+WAIT_LOW:
+    jmp pin  WAIT_LOW        ; spin while still high
+    jmp      WAIT_HIGH       ; now low → wait for next rising edge
+CAPTURE:
+.wrap_target
+    in pins, 12
+    in null, 4
+.wrap
+
+.program capture_prog_trigger_fall
+    jmp pin  WAIT_LOW        ; if already high, go wait for low
+WAIT_HIGH:
+    jmp pin  WAIT_LOW        ; now high → wait for it to drop
+    jmp      WAIT_HIGH       ; still low → wait for it to rise
+WAIT_LOW:
+    jmp pin  WAIT_LOW        ; spin while still high
+.wrap_target
+    in pins, 12
+    in null, 4
+.wrap
+
+.program capture_prog_trigger_both
+    jmp pin  WAIT_FALL       ; if starting high, look for falling edge
+WAIT_RISE:
+    jmp pin  CAPTURE         ; pin went high → rising edge
+    jmp      WAIT_RISE
+WAIT_FALL:
+    jmp pin  WAIT_FALL       ; spin while high
+CAPTURE:
+.wrap_target
+    in pins, 12
+    in null, 4
+.wrap
+
+.program capture_prog_trigger_low_level
+WAIT_LOW:
+    jmp pin  WAIT_LOW        ; spin while pin is high
+.wrap_target
+    in pins, 12
+    in null, 4
+.wrap
+
+.program capture_prog_trigger_high_level
+WAIT_HIGH:
+    jmp pin  CAPTURE         ; pin is high → start capture
+    jmp      WAIT_HIGH
+CAPTURE:
+.wrap_target
+    in pins, 12
+    in null, 4
 .wrap

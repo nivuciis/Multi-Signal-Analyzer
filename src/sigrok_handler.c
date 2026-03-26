@@ -34,9 +34,10 @@
 
 #define SIGROK_SAMPLE_RATE_MIN  5000U
 #define SIGROK_SAMPLE_RATE_MAX  120000000U
-#define SIGROK_SAMPLE_LIMIT_MAX 1024U
+#define SIGROK_SAMPLE_LIMIT_MAX 1000000U
+#define CAPTURE_CHUNK_SIZE      1024U
 
-#define FLUSH_THRESHOLD 64U
+#define FLUSH_THRESHOLD 256U
 
 #define RLE_BASE    0x30U
 #define RLE_MAX_RUN 32U
@@ -197,27 +198,18 @@ static void rle_flush_run(uint8_t *out, uint32_t *idx, uint16_t sample, uint32_t
 	*idx = id;
 }
 
-static bool ana_send_packet_channels(void)
+static bool ana_send_packet_channels(uint32_t chunk_samples, uint32_t *bytes_out)
 {
 	struct ana_module_system *ch = ana_channels_get_module();
 	const uint16_t *dig_ptr = ch->dma.dma_buffer;
 
 	uint32_t buf_idx = 0;
-	uint32_t total_sent = 0;
+	*bytes_out = 0;
 
 	uint16_t prev_sample = (uint16_t)((*dig_ptr) & self.digital_mask);
 	uint32_t run_count = 1;
 
-	/* Collect active sigrok analog channel indices once */
-	uint8_t ana_ch[ADC_NUM_CHANNELS];
-	uint32_t ana_cnt = 0;
-	for (int bit = 0; bit < ADC_NUM_CHANNELS; bit++) {
-		if (self.analog_mask & (1u << bit)) {
-			ana_ch[ana_cnt++] = (uint8_t)bit;
-		}
-	}
-
-	for (uint32_t i = 1; i < self.num_samples; i++) {
+	for (uint32_t i = 1; i < chunk_samples; i++) {
 		uint16_t cur_sample = (uint16_t)(dig_ptr[i] & self.digital_mask);
 
 		if (cur_sample == prev_sample && run_count < RLE_MAX_RUN) {
@@ -225,12 +217,13 @@ static bool ana_send_packet_channels(void)
 		} else {
 			rle_flush_run(self.tx.buf, &buf_idx, prev_sample, run_count);
 
-			/* Analog bytes for the last RLE group: one set per sample in the run */
 			for (uint32_t r = 0; r < run_count; r++) {
 				uint32_t sample_idx = i - run_count + r;
-				for (uint32_t a = 0; a < ana_cnt; a++) {
-					self.tx.buf[buf_idx++] =
-						ana_adc_sigrok_byte(ana_ch[a], sample_idx);
+				for (uint8_t bit = 0; bit < ADC_NUM_CHANNELS; bit++) {
+					if (self.analog_mask & (1u << bit)) {
+						self.tx.buf[buf_idx++] =
+							ana_adc_sigrok_byte(bit, sample_idx);
+					}
 				}
 			}
 
@@ -238,7 +231,7 @@ static bool ana_send_packet_channels(void)
 				if (!ana_send_bytes(self.tx.buf, buf_idx)) {
 					return false;
 				}
-				total_sent += buf_idx;
+				*bytes_out += buf_idx;
 				buf_idx = 0;
 			}
 
@@ -247,12 +240,14 @@ static bool ana_send_packet_channels(void)
 		}
 	}
 
-	/* Flush last run */
 	rle_flush_run(self.tx.buf, &buf_idx, prev_sample, run_count);
+
 	for (uint32_t r = 0; r < run_count; r++) {
-		uint32_t sample_idx = self.num_samples - run_count + r;
-		for (uint32_t a = 0; a < ana_cnt; a++) {
-			self.tx.buf[buf_idx++] = ana_adc_sigrok_byte(ana_ch[a], sample_idx);
+		uint32_t sample_idx = chunk_samples - run_count + r;
+		for (uint8_t bit = 0; bit < ADC_NUM_CHANNELS; bit++) {
+			if (self.analog_mask & (1u << bit)) {
+				self.tx.buf[buf_idx++] = ana_adc_sigrok_byte(bit, sample_idx);
+			}
 		}
 	}
 
@@ -260,43 +255,59 @@ static bool ana_send_packet_channels(void)
 		if (!ana_send_bytes(self.tx.buf, buf_idx)) {
 			return false;
 		}
-		total_sent += buf_idx;
+		*bytes_out += buf_idx;
 	}
 
-	char done_marker[32];
-	snprintf(done_marker, sizeof(done_marker), "$%lu+", (unsigned long)total_sent);
-	ana_send_response(done_marker);
 	return true;
 }
 
 static void run_capture(bool continuous)
 {
-	bool ok;
 	struct ana_module_system *config = ana_channels_get_module();
 
-	ana_module_set_sample_rate(config);
 	tx_init();
 	ana_led_set_status(LED_STATUS_CAPTURING);
 
 	do {
-		memset(config->dma.dma_buffer, 0, self.cfg.samples * sizeof(uint16_t));
+		uint32_t remaining = self.cfg.samples;
+		uint32_t total_sent = 0;
+		bool ok = true;
 
-		/* 1. Captura digital via PIO + DMA */
-		ana_capture_data_start(config);
+		while (remaining > 0 && tud_cdc_connected()) {
+			uint32_t chunk =
+				(remaining < CAPTURE_CHUNK_SIZE) ? remaining : CAPTURE_CHUNK_SIZE;
 
-		/* 2. Captura analógica logo após (mesma janela temporal) */
-		if (self.tx.active_analog_ch > 0) {
-			ana_adc_capture_dma(self.cfg.samples, self.analog_mask);
+			self.cfg.samples = chunk;
+			ana_module_set_sample_rate(config);
+
+			memset(config->dma.dma_buffer, 0, chunk * sizeof(uint16_t));
+			ana_capture_data_start(config);
+
+			if (self.tx.active_analog_ch > 0) {
+				ana_adc_capture_dma(chunk, self.analog_mask);
+			}
+
+			uint32_t chunk_bytes = 0;
+			ok = ana_send_packet_channels(chunk, &chunk_bytes);
+			if (!ok) {
+				break;
+			}
+
+			total_sent += chunk_bytes;
+			remaining -= chunk;
 		}
 
-		/* 3. Envia os dois streams intercalados */
-		ok = ana_send_packet_channels();
+		self.cfg.samples = self.num_samples;
 
 		if (!ok) {
 			ana_send_response("!!!");
 			log_warn("sigrok", "Capture aborted: host disconnected");
 			break;
 		}
+
+		char done_marker[32];
+		snprintf(done_marker, sizeof(done_marker), "$%lu+", (unsigned long)total_sent);
+		ana_send_response(done_marker);
 
 	} while (continuous && tud_cdc_connected());
 
@@ -333,17 +344,22 @@ static void handle_set_sample_rate(void)
 static void handle_set_sample_limit(void)
 {
 	uint32_t limit = (uint32_t)strtol((char *)&self.cmd_str[1], &self.end_ptr, 10);
+
 	if (self.end_ptr == NULL || *self.end_ptr != '\0') {
 		log_warn("sigrok", "Invalid sample limit: %s", &self.cmd_str[1]);
 		return;
 	}
+
 	if (limit > SIGROK_SAMPLE_LIMIT_MAX) {
 		limit = SIGROK_SAMPLE_LIMIT_MAX;
 	}
+
 	if (limit == 0) {
 		limit = 1;
 	}
+
 	self.cfg.samples = limit;
+
 	log_inf("sigrok", "Sample limit: %lu", (unsigned long)limit);
 }
 

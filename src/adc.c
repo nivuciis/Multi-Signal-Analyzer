@@ -50,9 +50,11 @@ static const uint8_t SIGROK_CH_TO_GPIO[ADC_NUM_CHANNELS] = {
 
 #define ADC_MV_PER_LSB  (3300.0f / 4096.0f)  /* 12-bit ADC, 0–3300mV range */
 
-static uint16_t adc_buf_raw[ADC_NUM_CHANNELS][SIGROK_SAMPLE_LIMIT_MAX];
+#define ADC_BUF_SIZE 1024
 
-static uint16_t adc_dma_scratch[SIGROK_SAMPLE_LIMIT_MAX * ADC_NUM_CHANNELS];
+static uint16_t adc_buf_raw[ADC_NUM_CHANNELS][ADC_BUF_SIZE];
+
+static uint16_t adc_dma_scratch[ADC_BUF_SIZE * ADC_NUM_CHANNELS];
 
 struct ana_adc_module ana_adc = {
 	.module = {
@@ -101,8 +103,8 @@ void ana_adc_capture_dma(uint32_t samples, uint8_t analog_mask)
 	if (samples == 0 || analog_mask == 0) {
 		return;
 	}
-	if (samples > SIGROK_SAMPLE_LIMIT_MAX) {
-		samples = SIGROK_SAMPLE_LIMIT_MAX;
+	if (samples > ADC_BUF_SIZE) {
+		samples = ADC_BUF_SIZE;
 	}
 
 

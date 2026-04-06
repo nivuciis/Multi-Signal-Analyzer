@@ -19,7 +19,7 @@
 
 #define MODULE_NAME "Channels"
 
-static uint16_t digital_channel_buffer[MAX_SAMPLES_FOR_DEBUG];
+static uint16_t digital_channel_buffer[1024];
 
 struct ana_module_system channels = {
 	.module =
@@ -39,7 +39,7 @@ void ana_channels_init(PIO pio)
 	channels.pio.pio_program = &capture_prog_simple_program;
 	channels.pio.get_default_cfg_func =
 		(pio_sm_config(*)(uint8_t))capture_prog_simple_program_get_default_config;
-	channels.pio.jmp_pin = -1;
+	channels.pio.jmp_pin = 0xFF;
 
 	channels.dma.dma_buffer = digital_channel_buffer;
 
@@ -56,12 +56,12 @@ struct ana_module_system *ana_channels_get_module(void)
 
 void ana_channels_apply_trigger(void)
 {
-	struct SIGROK_TRIGGER *trigger = ana_sigrok_get_trigger();
+	struct sigrok_trigger *trigger = ana_sigrok_get_trigger();
 
 	const pio_program_t *prog = &capture_prog_simple_program;
 	pio_sm_config (*cfg_func)(uint8_t) =
 		(pio_sm_config(*)(uint8_t))capture_prog_simple_program_get_default_config;
-	uint8_t jmp_pin = 0;
+	uint8_t jmp_pin = 0xFF; /* sentinel: no jmp_pin (matches ana_module_pio_init check) */
 
 	int trig_ch = -1;
 	enum ana_trigger_type trig_type = ANA_TRIGGER_EDGE_RISE;

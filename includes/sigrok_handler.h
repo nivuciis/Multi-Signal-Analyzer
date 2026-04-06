@@ -39,17 +39,23 @@ PICO_DEFAULT_CHANNELS_PIN_COUNT + PICO_DEFAULT_CAN_PIN_COUNT +                  
 /**
  * @brief Command list
  *
+ * Identification string format: "SRPICO,AxxyDzz,vv"
+ *   xx = number of analog channels (2-digit decimal, e.g. 03)
+ *   y  = bytes per analog sample (always 1)
+ *   zz = number of digital channels (2-digit decimal, e.g. 12)
+ *   vv = protocol version (must be "02")
  */
 enum SIGROK_PROTOCOL_COMMANDS {
-	SIGROK_CMD_IDENTIFY = 'i',           	/**< 'i' — Identity query. Firmware responds with capability string. */
-	SIGROK_CMD_SET_SAMPLE_RATE = 'R',    	/**< 'R<hz>' — Set sample rate in Hz. Range: 5000–120000000. */
-	SIGROK_CMD_SET_SAMPLE_LIMIT = 'L',   	/**< 'L<n>' — Set number of samples to capture (fixed mode). */
-	SIGROK_CMD_GET_ANALOG_SCALE = 'a',   	/**< 'a<ch>' — Query analog scale for channel ch (0–2). */
-	SIGROK_CMD_SET_ANALOG_CHANNEL = 'A', 	/**< 'A<en><ch>' — Enable (en=1) or disable (en=0) analog channel ch. */
-	SIGROK_CMD_SET_DIGITAL_CHANNEL = 'D',	/**< 'D<en><ch>' — Enable (en=1) or disable (en=0) digital channel ch. */
-	SIGROK_CMD_FIXED_CAPTURE = 'F', 	 	/**< 'F' — Start fixed capture (exactly L samples). */
-	SIGROK_CMD_CONTINUOUS_CAPTURE = 'C', 	/**< 'C' — Start continuous capture (runs until host sends '*'). */
-	SIGROK_CMD_SET_TRIGGER = 't' 			/**< 't<type><ch>' — Set HW trigger. type: r/f/b/1/h/n. ch: 0 is based channel */	
+	SIGROK_CMD_IDENTIFY = 'i',            /**< 'i' — Identity query. Responds with "SRPICO,AxxyDzz,02". */
+	SIGROK_CMD_SET_SAMPLE_RATE = 'R',     /**< 'R<hz>' — Set sample rate in Hz. Range: 5000–120000000. */
+	SIGROK_CMD_SET_SAMPLE_LIMIT = 'L',    /**< 'L<n>' — Set number of samples to capture (fixed mode). */
+	SIGROK_CMD_GET_ANALOG_SCALE = 'a',    /**< 'a<ch>' — Query analog scale for channel ch (0–2). */
+	SIGROK_CMD_SET_ANALOG_CHANNEL = 'A',  /**< 'A<en><ch>' — Enable (en=1) or disable (en=0) analog channel ch. */
+	SIGROK_CMD_SET_DIGITAL_CHANNEL = 'D', /**< 'D<en><ch>' — Enable (en=1) or disable (en=0) digital channel ch (0-based). */
+	SIGROK_CMD_FIXED_CAPTURE = 'F',       /**< 'F' — Fixed capture. No ACK; data + "$<n>+" terminates. */
+	SIGROK_CMD_CONTINUOUS_CAPTURE = 'C',  /**< 'C' — Continuous capture (SW-triggered by driver). No ACK. */
+	SIGROK_CMD_SET_PRETRIGGER = 'p',      /**< 'p<n>' — Pretrigger buffer depth hint. ACK with '*'. */
+	SIGROK_CMD_SET_TRIGGER = 't',         /**< 't<type><idx>' — HW trigger. type: 0=low,1=high,2=rise,3=fall,4=edge. idx = ch+2. */
 };
 
 /**
@@ -82,7 +88,7 @@ enum ana_trigger_type {
  * @brief System trigger to channels
  *
  */
-struct SIGROK_TRIGGER {
+struct sigrok_trigger {
 	uint16_t trigger_mask; /**< Bitmask of digital channels involved in the trigger condition */
 	enum ana_trigger_type trigger_type[MAX_NUM_CHANNELS]; /**< Type of trigger */
 };
@@ -118,8 +124,8 @@ struct pulseview_sample_config *ana_sigrok_get_sample_config(void);
 /**
  * @brief Get the current trigger configuration.
  *
- * @return struct SIGROK_TRIGGER* Pointer to the trigger configuration
+ * @return struct sigrok_trigger* Pointer to the trigger configuration
  */
-struct SIGROK_TRIGGER *ana_sigrok_get_trigger(void);
+struct sigrok_trigger *ana_sigrok_get_trigger(void);
 
 #endif /* SIGROK_HANDLER_H */

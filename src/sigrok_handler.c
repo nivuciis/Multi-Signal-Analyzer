@@ -30,7 +30,7 @@
 #include <hardware/clocks.h>
 #include <hardware/vreg.h>
 #include <pico/time.h>
-#include <tusb.h>
+#include "usb_comm.h"
 
 #define SIGROK_SAMPLE_RATE_MIN  5000U
 #define SIGROK_SAMPLE_RATE_MAX  120000000U
@@ -47,7 +47,7 @@
 #define DIGITAL_MASK_DEFAULT 0x0FFF
 #define ANALOG_MASK_DEFAULT  0x07
 
-#define SIGROK_IDENT_STRING "SRPICO,A031D16,02"
+#define SIGROK_IDENT_STRING "SRPICO,A031D12,02"
 
 #if PICO_DEFAULT_ADC_VOLTAGE_DIVIDER
 #define ADC_MV_FULL_SCALE   13200.0
@@ -76,7 +76,7 @@ static struct SIGROK_HANDLER {
 	int8_t cmd_str[32];
 	int8_t response[64];
 	char *end_ptr;
-	struct SIGROK_TRIGGER trigger_config;
+	struct sigrok_trigger trigger_config;
 } self = {
 	.sample_rate = 5000,
 	.num_samples = 1024,
@@ -97,7 +97,7 @@ static struct SIGROK_HANDLER {
 	.trigger_config =
 		{
 			.trigger_mask = 0x0000,
-			.trigger_type = -1,
+			.trigger_type = {-1},
 		},
 };
 
@@ -108,39 +108,19 @@ typedef struct {
 
 static void ana_send_response(const char *str)
 {
-	if (!tud_cdc_connected()) {
+	if (!ana_usb_is_connected()) {
 		log_debug("sigrok", "Cannot send (disconnected): %s", str);
 		return;
 	}
-	tud_cdc_write(str, strlen(str));
-	tud_cdc_write_flush();
+	ana_usb_write((const uint8_t *)str, strlen(str));
 }
 
 static bool ana_send_bytes(const uint8_t *buf, uint32_t len)
 {
-	uint32_t sent = 0;
-	while (sent < len) {
-		if (!tud_cdc_connected()) {
-			return false;
-		}
-
-		uint32_t avail = tud_cdc_write_available();
-		if (avail == 0) {
-			tud_task();
-			continue;
-		}
-
-		uint32_t chunk = (len - sent) < avail ? (len - sent) : avail;
-		uint32_t written = tud_cdc_write(buf + sent, chunk);
-		sent += written;
-
-		if ((sent % 64 == 0) || (sent == len)) {
-			tud_cdc_write_flush();
-		} else {
-			tud_task();
-		}
+	if (!ana_usb_is_connected()) {
+		return false;
 	}
-	return true;
+	return ana_usb_write(buf, len);
 }
 
 static void tx_init(void)
@@ -187,11 +167,11 @@ static bool ana_send_packet_channels(uint32_t chunk_samples, uint32_t *bytes_out
 	uint32_t buf_idx = 0;
 	*bytes_out = 0;
 
-	uint16_t prev_sample = (uint16_t)((*dig_ptr) & self.digital_mask);
+	uint16_t prev_sample = (uint16_t)(((*dig_ptr) >> 4) & self.digital_mask);
 	uint32_t run_count = 1;
 
 	for (uint32_t i = 1; i < chunk_samples; i++) {
-		uint16_t cur_sample = (uint16_t)(dig_ptr[i] & self.digital_mask);
+		uint16_t cur_sample = (uint16_t)((dig_ptr[i] >> 4) & self.digital_mask);
 
 		if (cur_sample == prev_sample && run_count < RLE_MAX_RUN) {
 			run_count++;
@@ -261,7 +241,7 @@ static void run_capture(bool continuous)
 		bool ok = true;
 
 		
-		while (remaining > 0 && tud_cdc_connected()) {
+		while (remaining > 0 && ana_usb_is_connected()) {
 			memset(self.tx.buf, 0, sizeof(self.tx.buf));
 
 			uint32_t chunk =
@@ -290,7 +270,7 @@ static void run_capture(bool continuous)
 		self.cfg.samples = self.num_samples;
 
 		if (!ok) {
-			ana_send_response("!!!");
+			ana_usb_write((const uint8_t *)"!!!$0+", 7U); /* 6 chars + null stop byte */
 			log_warn("sigrok", "Capture aborted: host disconnected");
 			break;
 		}
@@ -298,9 +278,9 @@ static void run_capture(bool continuous)
 		char done_marker[32];
 
 		snprintf(done_marker, sizeof(done_marker), "$%lu+", (unsigned long)total_sent);
-		ana_send_response(done_marker);
+		ana_usb_write((const uint8_t *)done_marker, strlen(done_marker) + 1U);
 
-	} while (continuous && tud_cdc_connected());
+	} while (continuous && ana_usb_is_connected());
 
 	ana_led_set_status(LED_STATUS_CONNECTED);
 }
@@ -350,6 +330,7 @@ static void handle_set_sample_limit(void)
 	}
 
 	self.cfg.samples = limit;
+	self.num_samples = limit;
 
 	log_inf("sigrok", "Sample limit: %lu", (unsigned long)limit);
 }
@@ -390,7 +371,7 @@ static void handle_set_digital_channel(void)
 		log_warn("sigrok", "Invalid digital channel");
 		return;
 	}
-	if (ch >= 0 && ch <= 15) {
+	if (ch >= 0 && ch < PICO_DEFAULT_CHANNELS_PIN_COUNT) {
 		if (enable) {
 			self.digital_mask |= (uint16_t)(1u << ch);
 		} else {
@@ -403,17 +384,27 @@ static void handle_set_digital_channel(void)
 static void handle_fixed_capture(void)
 {
 	run_capture(false);
+	/* The done marker $<n>+\0 is the complete response for capture commands.
+	 * Suppress the generic '*' ACK so the driver does not receive an extra
+	 * byte after the protocol stop marker. */
+	self.response[0] = '\0';
 }
 
 /* TODO: true double-buffer streaming @JoaoMatheusND */
 static void handle_continuous_capture(void)
 {
 	run_capture(true);
+	self.response[0] = '\0';
+}
+
+static void handle_set_pretrigger(void)
+{
+	/* Pretrigger depth hint — acknowledge only, not implemented in HW */
 }
 
 static void handle_set_trigger(void)
 {
-	if (self.cmd_str_index < 2) {
+	if (self.cmd_str_index < 3) {
 		log_warn("sigrok", "Trigger command too short");
 		return;
 	}
@@ -426,12 +417,15 @@ static void handle_set_trigger(void)
 		return;
 	}
 
-	int ch = (int)strtol((char *)&self.cmd_str[2], &self.end_ptr, 10);
+	/* Driver sends idx = ch + 2; subtract offset to get 0-based channel */
+	int idx = (int)strtol((char *)&self.cmd_str[2], &self.end_ptr, 10);
 
-	if (self.end_ptr == NULL || *self.end_ptr != '\0') {
+	if (self.end_ptr == (char *)&self.cmd_str[2] || self.end_ptr == NULL || *self.end_ptr != '\0') {
 		log_warn("sigrok", "Invalid trigger channel: %s", &self.cmd_str[2]);
 		return;
 	}
+
+	int ch = idx - 2;
 
 	if (ch < 0 || ch >= PICO_DEFAULT_CHANNELS_PIN_COUNT) {
 		log_warn("sigrok", "Trigger channel out of range: %d", ch);
@@ -440,20 +434,20 @@ static void handle_set_trigger(void)
 
 	enum ana_trigger_type trig_type;
 	switch (type_char) {
-	case 'r':
-		trig_type = ANA_TRIGGER_EDGE_RISE;
-		break;
-	case 'f':
-		trig_type = ANA_TRIGGER_EDGE_FALL;
-		break;
-	case 'b':
-		trig_type = ANA_TRIGGER_EDGE_BOTH;
-		break;
-	case 'l':
+	case '0':
 		trig_type = ANA_TRIGGER_LEVEL_LOW;
 		break;
-	case 'h':
+	case '1':
 		trig_type = ANA_TRIGGER_LEVEL_HIGH;
+		break;
+	case '2':
+		trig_type = ANA_TRIGGER_EDGE_RISE;
+		break;
+	case '3':
+		trig_type = ANA_TRIGGER_EDGE_FALL;
+		break;
+	case '4':
+		trig_type = ANA_TRIGGER_EDGE_BOTH;
 		break;
 	default:
 		log_warn("sigrok", "Unknown trigger type: %c", type_char);
@@ -465,7 +459,7 @@ static void handle_set_trigger(void)
 	log_inf("sigrok", "Trigger set: ch %d type '%c'", ch, type_char);
 }
 
-struct SIGROK_TRIGGER *ana_sigrok_get_trigger(void)
+struct sigrok_trigger *ana_sigrok_get_trigger(void)
 {
 	return &self.trigger_config;
 }
@@ -479,6 +473,7 @@ static const sigrok_command_t sigrok_commands[] = {
 	{SIGROK_CMD_SET_DIGITAL_CHANNEL, handle_set_digital_channel},
 	{SIGROK_CMD_FIXED_CAPTURE, handle_fixed_capture},
 	{SIGROK_CMD_CONTINUOUS_CAPTURE, handle_continuous_capture},
+	{SIGROK_CMD_SET_PRETRIGGER, handle_set_pretrigger},
 	{SIGROK_CMD_SET_TRIGGER, handle_set_trigger}
 };
 
@@ -493,6 +488,8 @@ void ana_sigrok_handle_init(void)
 	self.cmd_str_index = 0;
 	memset(self.cmd_str, 0, sizeof(self.cmd_str));
 	self.trigger_config.trigger_mask = 0;
+	self.analog_mask = ANALOG_MASK_DEFAULT;
+	self.digital_mask = DIGITAL_MASK_DEFAULT;
 }
 
 void ana_sigrok_handle_process_byte(uint8_t received_command)

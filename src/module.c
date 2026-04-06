@@ -15,6 +15,7 @@
 
 #include <stdint.h>
 
+#include <hardware/dma.h>
 #include <hardware/pio.h>
 
 void ana_module_pio_init(struct ana_module_system *config)
@@ -34,22 +35,25 @@ void ana_module_pio_init(struct ana_module_system *config)
 	for (int i = 0; i < config->module.pin_count; i++) {
 		pin = config->module.pin_base + i;
 		pio_gpio_init(config->pio.instance, pin);
-		gpio_pull_up(pin);
+		gpio_pull_down(pin);
 	}
 
 	pio_sm_set_consecutive_pindirs(config->pio.instance, config->pio.sm,
 				       config->module.pin_base, config->module.pin_count, false);
-	sm_config_set_wrap(&sm_cfg, config->pio.pio_offset,
-			   config->pio.pio_offset + config->pio.pio_program->length - 1);
+	/* Do NOT override wrap here — the program's get_default_cfg_func already
+	 * sets the correct wrap_target / wrap pair from the .wrap_target / .wrap
+	 * directives in the PIO source.  Overriding with (offset, offset+length-1)
+	 * would force the wrap to jump back to instruction 0 (the trigger preamble)
+	 * instead of to the CAPTURE label, corrupting every triggered capture. */
 	sm_config_set_in_pins(&sm_cfg, config->module.pin_base);
-	sm_config_set_in_shift(&sm_cfg, false, true, config->module.pin_count);
+	sm_config_set_in_shift(&sm_cfg, false, true, 16);
 
 	float clkdiv = clock_get_hz(clk_sys) / (float)cfg->sample_rate_hz;
 	sm_config_set_clkdiv(&sm_cfg, clkdiv);
 
 	sm_config_set_fifo_join(&sm_cfg, PIO_FIFO_JOIN_RX);
 
-	if (config->pio.jmp_pin > 0) {
+	if (config->pio.jmp_pin != 0xFF) {
 		sm_config_set_jmp_pin(&sm_cfg, config->pio.jmp_pin);
 	}
 
@@ -128,11 +132,15 @@ void ana_module_pio_reload(struct ana_module_system *config, const pio_program_t
 			   pio_sm_config (*new_cfg_func)(uint8_t offset), uint8_t jmp_pin)
 {
 	pio_sm_set_enabled(config->pio.instance, config->pio.sm, false);
-	pio_remove_program(config->pio.instance, config->pio.pio_program, config->pio.pio_offset);
+	pio_remove_program_and_unclaim_sm(config->pio.pio_program, config->pio.instance,
+					  config->pio.sm, config->pio.pio_offset);
 
 	config->pio.pio_program = new_program;
 	config->pio.get_default_cfg_func = new_cfg_func;
 	config->pio.jmp_pin = jmp_pin;
 
 	ana_module_pio_init(config);
+
+	channel_config_set_dreq(&config->dma.instance_cfg,
+				pio_get_dreq(config->pio.instance, config->pio.sm, false));
 }

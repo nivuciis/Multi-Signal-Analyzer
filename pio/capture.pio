@@ -33,12 +33,12 @@ CAPTURE:
 .wrap
 
 .program capture_prog_trigger_fall
-    jmp pin  WAIT_LOW        ; if already high, go wait for low
-WAIT_HIGH:
-    jmp pin  WAIT_LOW        ; now high → wait for it to drop
-    jmp      WAIT_HIGH       ; still low → wait for it to rise
-WAIT_LOW:
-    jmp pin  WAIT_LOW        ; spin while still high
+    jmp pin  WAIT_FALL       ; if high, wait for falling edge
+WAIT_RISE:
+    jmp pin  WAIT_FALL       ; pin went high → wait for fall
+    jmp      WAIT_RISE       ; still low → keep waiting for rise
+WAIT_FALL:
+    jmp pin  WAIT_FALL       ; spin while still high (falling = pin goes low)
 .wrap_target
     in pins, 12
     in null, 4

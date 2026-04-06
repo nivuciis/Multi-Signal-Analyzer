@@ -1,3 +1,6 @@
+#ifndef _BOARD_DEF_H_
+#define _BOARD_DEF_H_
+
 /**
  * @brief LED configuration
  *
@@ -64,3 +67,5 @@
 #ifndef PICO_DEFAULT_ADC_CHANNEL_3
 #define PICO_DEFAULT_ADC_CHANNEL_3 45
 #endif
+
+#endif /* _BOARD_DEF_H_ */

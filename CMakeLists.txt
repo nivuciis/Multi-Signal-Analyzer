@@ -76,6 +76,7 @@ target_link_libraries(multi_signal_analyzer
             hardware_clocks
             hardware_timer
             pico_stdlib
+            pico_multicore
             tinyusb_device
             tinyusb_board
         )

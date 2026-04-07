@@ -100,10 +100,6 @@ typedef struct {
 	void (*handler)(void);
 } sigrok_command_t;
 
-/* ------------------------------------------------------------------ */
-/* USB helpers                                                         */
-/* ------------------------------------------------------------------ */
-
 static void ana_send_response(const char *str)
 {
 	if (!tud_cdc_connected()) {
@@ -141,10 +137,6 @@ static bool ana_send_bytes(const uint8_t *buf, uint32_t len)
 	return true;
 }
 
-/* ------------------------------------------------------------------ */
-/* tx_init                                                             */
-/* ------------------------------------------------------------------ */
-
 static void tx_init(void)
 {
 	int highest = -1;
@@ -161,37 +153,20 @@ static void tx_init(void)
 	self.tx.bytes_per_sample = self.tx.bytes_per_dig_sample + self.tx.active_analog_ch;
 }
 
-/* ------------------------------------------------------------------ */
-/* Analog encoding                                                     */
-/* ------------------------------------------------------------------ */
-
-static inline uint8_t encode_analog_mv(double mv)
-{
-	if (mv < 0.0) {
-		mv = 0.0;
-	}
-	if (mv > ADC_MV_FULL_SCALE) {
-		mv = ADC_MV_FULL_SCALE;
-	}
-	uint8_t v7 = (uint8_t)((mv / ADC_MV_FULL_SCALE) * 127.0);
-	return (uint8_t)(0x80u | (v7 & 0x7Fu));
-}
-
-/* ------------------------------------------------------------------ */
-/* RLE helper (digital-only mode)                                      */
-/* ------------------------------------------------------------------ */
-
 static void rle_flush_run(uint8_t *out, uint32_t *idx, uint16_t sample, uint32_t run)
 {
 	uint32_t id = *idx;
 	while (run > 0) {
 		uint32_t chunk = MIN(run, RLE_MAX_RUN);
-		out[id++] = (uint8_t)(RLE_BASE + (chunk - 1));
+		out[id] = (uint8_t)(RLE_BASE + (chunk - 1));
+		id++;
 		if (self.tx.bytes_per_dig_sample >= 1) {
-			out[id++] = (uint8_t)(0x80u | (sample & 0x7Fu));
+			out[id] = (uint8_t)(0x80u | (sample & 0x7Fu));
+			id++;
 		}
 		if (self.tx.bytes_per_dig_sample >= 2) {
-			out[id++] = (uint8_t)(0x80u | ((sample >> 7) & 0x7Fu));
+			out[id] = (uint8_t)(0x80u | ((sample >> 7) & 0x7Fu));
+			id++;
 		}
 		run -= chunk;
 	}
@@ -221,8 +196,9 @@ static bool ana_send_packet_channels(uint32_t chunk_samples, uint32_t *bytes_out
 				uint32_t sample_idx = i - run_count + r;
 				for (uint8_t bit = 0; bit < ADC_NUM_CHANNELS; bit++) {
 					if (self.analog_mask & (1u << bit)) {
-						self.tx.buf[buf_idx++] =
-							ana_adc_sigrok_byte(bit, sample_idx);
+						self.tx.buf[buf_idx] =
+							ana_adc_sigrok_byte(bit, sample_idx, ana_adc_get_module());
+						buf_idx++;
 					}
 				}
 			}
@@ -246,7 +222,8 @@ static bool ana_send_packet_channels(uint32_t chunk_samples, uint32_t *bytes_out
 		uint32_t sample_idx = chunk_samples - run_count + r;
 		for (uint8_t bit = 0; bit < ADC_NUM_CHANNELS; bit++) {
 			if (self.analog_mask & (1u << bit)) {
-				self.tx.buf[buf_idx++] = ana_adc_sigrok_byte(bit, sample_idx);
+				self.tx.buf[buf_idx] = ana_adc_sigrok_byte(bit, sample_idx, ana_adc_get_module());
+				buf_idx++;
 			}
 		}
 	}
@@ -273,7 +250,10 @@ static void run_capture(bool continuous)
 		uint32_t total_sent = 0;
 		bool ok = true;
 
+		
 		while (remaining > 0 && tud_cdc_connected()) {
+			memset(self.tx.buf, 0, sizeof(self.tx.buf));
+
 			uint32_t chunk =
 				(remaining < CAPTURE_CHUNK_SIZE) ? remaining : CAPTURE_CHUNK_SIZE;
 
@@ -287,7 +267,7 @@ static void run_capture(bool continuous)
 				ana_adc_capture_dma(chunk, self.analog_mask);
 			}
 
-			uint32_t chunk_bytes = 0;
+			uint32_t chunk_bytes = 0; 
 			ok = ana_send_packet_channels(chunk, &chunk_bytes);
 			if (!ok) {
 				break;
@@ -306,6 +286,7 @@ static void run_capture(bool continuous)
 		}
 
 		char done_marker[32];
+
 		snprintf(done_marker, sizeof(done_marker), "$%lu+", (unsigned long)total_sent);
 		ana_send_response(done_marker);
 
@@ -417,7 +398,7 @@ static void handle_fixed_capture(void)
 /* TODO: true double-buffer streaming @JoaoMatheusND */
 static void handle_continuous_capture(void)
 {
-	run_capture(false);
+	run_capture(true);
 }
 
 /* ------------------------------------------------------------------ */
@@ -476,7 +457,8 @@ void ana_sigrok_handle_process_byte(uint8_t received_command)
 		self.cmd_str_index = 0;
 
 	} else if (self.cmd_str_index < (int8_t)(sizeof(self.cmd_str) - 1)) {
-		self.cmd_str[self.cmd_str_index++] = (char)received_command;
+		self.cmd_str[self.cmd_str_index] = (char)received_command;
+		self.cmd_str_index++;
 	} else {
 		log_warn("sigrok", "Command buffer overflow, resetting");
 		self.cmd_str_index = 0;

@@ -76,10 +76,9 @@ void ana_adc_capture_dma(uint32_t samples, uint8_t analog_mask);
  * @param sample_idx Sample index within the capture.
  * @return uint8_t   Byte ready to write into the TX stream.
  */
-static inline uint8_t ana_adc_sigrok_byte(uint8_t sigrok_ch, uint32_t sample_idx)
+static inline uint8_t ana_adc_sigrok_byte(uint8_t sigrok_ch, uint32_t sample_idx, struct ana_adc_module *adc)
 {
-	extern struct ana_adc_module ana_adc;
-	return (uint8_t)(0x80u | ((ana_adc.raw[sigrok_ch][sample_idx] >> 5) & 0x7Fu));
+	return (uint8_t)(0x80u | ((adc->raw[sigrok_ch][sample_idx] >> 5) & 0x7Fu));
 }
 
 /**

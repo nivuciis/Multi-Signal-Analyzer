@@ -120,7 +120,8 @@ void ana_adc_capture_dma(uint32_t samples, uint8_t analog_mask)
 
 	for (int hw = 0; hw <= 7; hw++) {
 		if (rr_hw_mask & (1u << hw)) {
-			ch_order[active_cnt++] = hw;
+			ch_order[active_cnt] = hw;
+			active_cnt++;
 		}
 	}
 	if (active_cnt == 0) {

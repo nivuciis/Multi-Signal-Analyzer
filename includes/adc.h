@@ -38,7 +38,7 @@ struct ana_adc_module {
 };
 
 /**
- * @brief Initialize the ADC peripherals and claim one DMA channel.
+ * @brief Initialize the ADC peripherals.
  */
 void ana_adc_init(void);
 

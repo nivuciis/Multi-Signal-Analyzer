@@ -15,6 +15,7 @@
 #include "channels.h"
 #include "led.h"
 #include "sigrok_handler.h"
+#include "adc.h"
 
 #include <hardware/timer.h>
 #include <pico/stdlib.h>
@@ -22,7 +23,6 @@
 #include <tusb.h>
 
 static char buf[64];
-
 /**
  * @brief Callback to synchronize the LED status with the USB connection state
  *
@@ -40,6 +40,7 @@ int main()
 	tusb_init();
 	ana_sigrok_handle_init();
 	ana_channels_init(pio0);
+	ana_adc_init();
 
 	struct repeating_timer usb_conection_timer;
 

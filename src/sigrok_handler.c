@@ -21,6 +21,7 @@
 #include "log.h"
 #include "macros.h"
 #include "sigrok_handler.h"
+#include "usb_comm.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -30,7 +31,6 @@
 #include <hardware/clocks.h>
 #include <hardware/vreg.h>
 #include <pico/time.h>
-#include "usb_comm.h"
 
 #define SIGROK_SAMPLE_RATE_MIN  5000U
 #define SIGROK_SAMPLE_RATE_MAX  120000000U
@@ -45,7 +45,7 @@
 #define TX_BUF_SIZE 4096U
 
 #define DIGITAL_MASK_DEFAULT 0x0FFF
-#define ANALOG_MASK_DEFAULT  0x07
+#define ANALOG_MASK_DEFAULT  0x00
 
 #define SIGROK_IDENT_STRING "SRPICO,A031D12,02"
 
@@ -139,87 +139,216 @@ static void tx_init(void)
 	self.tx.bytes_per_sample = self.tx.bytes_per_dig_sample + self.tx.active_analog_ch;
 }
 
-static void rle_flush_run(uint8_t *out, uint32_t *idx, uint16_t sample, uint32_t run)
+typedef struct {
+	uint32_t idx;
+	uint32_t bytes_sent;
+} tx_stream_t;
+
+static uint8_t active_analog_channels[ADC_NUM_CHANNELS];
+static uint8_t active_analog_count;
+
+static inline void tx_build_active_analog_list(void)
 {
-	uint32_t id = *idx;
+	active_analog_count = 0;
+
+	for (uint8_t i = 0; i < ADC_NUM_CHANNELS; i++) {
+		if (self.analog_mask & (1u << i)) {
+			active_analog_channels[active_analog_count] = i;
+			active_analog_count++;
+		}
+	}
+}
+
+static inline bool tx_flush(tx_stream_t *tx)
+{
+	if (tx->idx == 0) {
+		return true;
+	}
+
+	if (!ana_send_bytes(self.tx.buf, tx->idx)) {
+		return false;
+	}
+
+	tx->bytes_sent += tx->idx;
+	tx->idx = 0;
+
+	return true;
+}
+
+static inline bool tx_reserve(tx_stream_t *tx, uint32_t needed)
+{
+	if ((tx->idx + needed) >= TX_BUF_SIZE) {
+		return tx_flush(tx);
+	}
+
+	return true;
+}
+
+static inline bool tx_write_u8(tx_stream_t *tx, uint8_t value)
+{
+	if (!tx_reserve(tx, 1)) {
+		return false;
+	}
+
+	self.tx.buf[tx->idx++] = value;
+
+	return true;
+}
+
+static bool tx_write_rle(tx_stream_t *tx, uint16_t sample, uint32_t run)
+{
 	while (run > 0) {
+
 		uint32_t chunk = MIN(run, RLE_MAX_RUN);
-		out[id] = (uint8_t)(RLE_BASE + (chunk - 1));
-		id++;
+
+		uint32_t needed = 1 + self.tx.bytes_per_dig_sample;
+
+		if (!tx_reserve(tx, needed)) {
+			return false;
+		}
+
+		self.tx.buf[tx->idx++] = (uint8_t)(RLE_BASE + (chunk - 1));
+
 		if (self.tx.bytes_per_dig_sample >= 1) {
-			out[id] = (uint8_t)(0x80u | (sample & 0x7Fu));
-			id++;
+			self.tx.buf[tx->idx++] = (uint8_t)(0x80u | (sample & 0x7Fu));
 		}
+
 		if (self.tx.bytes_per_dig_sample >= 2) {
-			out[id] = (uint8_t)(0x80u | ((sample >> 7) & 0x7Fu));
-			id++;
+			self.tx.buf[tx->idx++] = (uint8_t)(0x80u | ((sample >> 7) & 0x7Fu));
 		}
+
 		run -= chunk;
 	}
-	*idx = id;
+
+	return true;
+}
+
+static bool tx_write_analog_samples(tx_stream_t *tx, uint32_t start_sample, uint32_t count)
+{
+	struct ana_adc_module *adc = ana_adc_get_module();
+
+	for (uint32_t s = 0; s < count; s++) {
+
+		uint32_t sample_idx = start_sample + s;
+
+		if (!tx_reserve(tx, active_analog_count)) {
+			return false;
+		}
+
+		for (uint8_t ch = 0; ch < active_analog_count; ch++) {
+
+			self.tx.buf[tx->idx++] =
+				ana_adc_sigrok_byte(active_analog_channels[ch], sample_idx, adc);
+		}
+	}
+
+	return true;
 }
 
 static bool ana_send_packet_channels(uint32_t chunk_samples, uint32_t *bytes_out)
 {
-	struct ana_module_system *ch = ana_channels_get_module();
-	const uint16_t *dig_ptr = ch->dma.dma_buffer;
+	struct ana_module_system *channels = ana_channels_get_module();
+	struct ana_adc_module *adc = ana_adc_get_module();
 
-	uint32_t buf_idx = 0;
-	*bytes_out = 0;
+	const uint16_t *dig = channels->dma.dma_buffer;
 
-	uint16_t prev_sample = (uint16_t)(((*dig_ptr) >> 4) & self.digital_mask);
-	uint32_t run_count = 1;
+	tx_stream_t tx = {
+		.idx = 0,
+		.bytes_sent = 0,
+	};
 
-	for (uint32_t i = 1; i < chunk_samples; i++) {
-		uint16_t cur_sample = (uint16_t)((dig_ptr[i] >> 4) & self.digital_mask);
+	tx_build_active_analog_list();
 
-		if (cur_sample == prev_sample && run_count < RLE_MAX_RUN) {
-			run_count++;
-		} else {
-			rle_flush_run(self.tx.buf, &buf_idx, prev_sample, run_count);
-
-			for (uint32_t r = 0; r < run_count; r++) {
-				uint32_t sample_idx = i - run_count + r;
-				for (uint8_t bit = 0; bit < ADC_NUM_CHANNELS; bit++) {
-					if (self.analog_mask & (1u << bit)) {
-						self.tx.buf[buf_idx] =
-							ana_adc_sigrok_byte(bit, sample_idx, ana_adc_get_module());
-						buf_idx++;
-					}
-				}
-			}
-
-			if (buf_idx + FLUSH_THRESHOLD > TX_BUF_SIZE) {
-				if (!ana_send_bytes(self.tx.buf, buf_idx)) {
-					return false;
-				}
-				*bytes_out += buf_idx;
-				buf_idx = 0;
-			}
-
-			prev_sample = cur_sample;
-			run_count = 1;
-		}
+	if (chunk_samples == 0) {
+		*bytes_out = 0;
+		return true;
 	}
 
-	rle_flush_run(self.tx.buf, &buf_idx, prev_sample, run_count);
+	if (active_analog_count > 0) {
 
-	for (uint32_t r = 0; r < run_count; r++) {
-		uint32_t sample_idx = chunk_samples - run_count + r;
-		for (uint8_t bit = 0; bit < ADC_NUM_CHANNELS; bit++) {
-			if (self.analog_mask & (1u << bit)) {
-				self.tx.buf[buf_idx] = ana_adc_sigrok_byte(bit, sample_idx, ana_adc_get_module());
-				buf_idx++;
+		for (uint32_t i = 0; i < chunk_samples; i++) {
+
+			uint16_t sample =
+				(uint16_t)((dig[i] >> 4) & self.digital_mask);
+
+			uint32_t needed =
+				1 + self.tx.bytes_per_dig_sample + active_analog_count;
+
+			if (!tx_reserve(&tx, needed)) {
+				return false;
+			}
+
+			self.tx.buf[tx.idx++] = 0x00;
+
+			/*
+			 * Digital sample bytes
+			 */
+			if (self.tx.bytes_per_dig_sample >= 1) {
+				self.tx.buf[tx.idx++] =
+					(uint8_t)(0x80u | (sample & 0x7Fu));
+			}
+
+			if (self.tx.bytes_per_dig_sample >= 2) {
+				self.tx.buf[tx.idx++] =
+					(uint8_t)(0x80u | ((sample >> 7) & 0x7Fu));
+			}
+
+			/*
+			 * Analog bytes
+			 */
+			for (uint8_t ch = 0; ch < active_analog_count; ch++) {
+
+				self.tx.buf[tx.idx++] =
+					ana_adc_sigrok_byte(
+						active_analog_channels[ch],
+						i,
+						adc);
 			}
 		}
-	}
 
-	if (buf_idx > 0) {
-		if (!ana_send_bytes(self.tx.buf, buf_idx)) {
+		if (!tx_flush(&tx)) {
 			return false;
 		}
-		*bytes_out += buf_idx;
+
+		*bytes_out = tx.bytes_sent;
+
+		return true;
 	}
+
+	uint16_t prev =
+		(uint16_t)((dig[0] >> 4) & self.digital_mask);
+
+	uint32_t run = 1;
+
+	for (uint32_t i = 1; i < chunk_samples; i++) {
+
+		uint16_t cur =
+			(uint16_t)((dig[i] >> 4) & self.digital_mask);
+
+		bool same = (cur == prev);
+
+		if (same && run < RLE_MAX_RUN) {
+			run++;
+			continue;
+		}
+
+		if (!tx_write_rle(&tx, prev, run)) {
+			return false;
+		}
+
+		prev = cur;
+		run = 1;
+	}
+
+	if (!tx_write_rle(&tx, prev, run)) {
+		return false;
+	}
+
+	if (!tx_flush(&tx)) {
+		return false;
+	}
+
+	*bytes_out = tx.bytes_sent;
 
 	return true;
 }
@@ -240,7 +369,6 @@ static void run_capture(bool continuous)
 		uint32_t total_sent = 0;
 		bool ok = true;
 
-		
 		while (remaining > 0 && ana_usb_is_connected()) {
 			memset(self.tx.buf, 0, sizeof(self.tx.buf));
 
@@ -257,7 +385,7 @@ static void run_capture(bool continuous)
 				ana_adc_capture_dma(chunk, self.analog_mask);
 			}
 
-			uint32_t chunk_bytes = 0; 
+			uint32_t chunk_bytes = 0;
 			ok = ana_send_packet_channels(chunk, &chunk_bytes);
 			if (!ok) {
 				break;
@@ -417,10 +545,10 @@ static void handle_set_trigger(void)
 		return;
 	}
 
-	/* Driver sends idx = ch + 2; subtract offset to get 0-based channel */
 	int idx = (int)strtol((char *)&self.cmd_str[2], &self.end_ptr, 10);
 
-	if (self.end_ptr == (char *)&self.cmd_str[2] || self.end_ptr == NULL || *self.end_ptr != '\0') {
+	if (self.end_ptr == (char *)&self.cmd_str[2] || self.end_ptr == NULL ||
+	    *self.end_ptr != '\0') {
 		log_warn("sigrok", "Invalid trigger channel: %s", &self.cmd_str[2]);
 		return;
 	}
@@ -474,14 +602,9 @@ static const sigrok_command_t sigrok_commands[] = {
 	{SIGROK_CMD_FIXED_CAPTURE, handle_fixed_capture},
 	{SIGROK_CMD_CONTINUOUS_CAPTURE, handle_continuous_capture},
 	{SIGROK_CMD_SET_PRETRIGGER, handle_set_pretrigger},
-	{SIGROK_CMD_SET_TRIGGER, handle_set_trigger}
-};
+	{SIGROK_CMD_SET_TRIGGER, handle_set_trigger}};
 
 #define SIGROK_COMMAND_COUNT (sizeof(sigrok_commands) / sizeof(sigrok_commands[0]))
-
-/* ------------------------------------------------------------------ */
-/* Public API                                                          */
-/* ------------------------------------------------------------------ */
 
 void ana_sigrok_handle_init(void)
 {

@@ -139,7 +139,7 @@ void ana_module_set_sample_rate(struct ana_module_system *config);
  * @param config          Structure referencing the module configuration
  * @param new_program     New PIO program to load
  * @param new_cfg_func    Default-config getter for the new program
- * @param jmp_pin         GPIO used by jmp pin (0 = not used)
+ * @param jmp_pin         GPIO used by jmp pin (0xFF = not used)
  */
 void ana_module_pio_reload(struct ana_module_system *config, const pio_program_t *new_program,
 			   pio_sm_config (*new_cfg_func)(uint8_t offset), uint8_t jmp_pin);

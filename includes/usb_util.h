@@ -1,5 +1,5 @@
 /*******************************************************************
- * @file usb_comm.h
+ * @file usb_util.h
  *
  * @brief USB communication interface for inter-core use.
  *
@@ -45,5 +45,43 @@ bool ana_usb_write(const uint8_t *buf, uint32_t len);
  * @return false Host is not connected.
  */
 bool ana_usb_is_connected(void);
+
+/**
+ * @brief Update the USB connection state.
+ *
+ * Called from Core 0 (e.g. a repeating timer) to reflect the result of
+ * tud_cdc_connected().
+ *
+ * @param connected Current connection state.
+ */
+void ana_usb_set_connected(bool connected);
+
+/**
+ * @brief Push CDC bytes into the RX ring buffer.
+ *
+ * Called from Core 0. Spins if the ring is full, dropping when disconnected.
+ *
+ * @param data Bytes received from USB CDC.
+ * @param len  Number of bytes.
+ */
+void ana_usb_rx_write(const uint8_t *data, uint32_t len);
+
+/**
+ * @brief Pop one byte from the RX ring buffer.
+ *
+ * Safe to call from Core 1.
+ *
+ * @param byte Output byte.
+ * @return true  A byte was available.
+ * @return false Ring was empty.
+ */
+bool ana_usb_rx_read(uint8_t *byte);
+
+/**
+ * @brief Flush the TX ring buffer to USB CDC.
+ *
+ * Called from Core 0 in the main event loop.
+ */
+void ana_usb_tx_drain(void);
 
 #endif /* USB_COMM_H */

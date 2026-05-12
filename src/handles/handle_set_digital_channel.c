@@ -1,0 +1,19 @@
+#include "handles/handles_internal.h"
+
+void handle_set_digital_channel(void)
+{
+	int enable = self.cmd_str[1] - '0';
+	int ch     = (int)strtol((char *)&self.cmd_str[2], &self.end_ptr, 10);
+	if (self.end_ptr == NULL || *self.end_ptr != '\0') {
+		log_warn("sigrok", "Invalid digital channel");
+		return;
+	}
+	if (ch >= 0 && ch < PICO_DEFAULT_CHANNELS_PIN_COUNT) {
+		if (enable) {
+			self.digital_mask |= (uint16_t)(1u << ch);
+		} else {
+			self.digital_mask &= (uint16_t)(~(1u << ch));
+		}
+		log_inf("sigrok", "Digital ch %d %s", ch, enable ? "enabled" : "disabled");
+	}
+}

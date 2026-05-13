@@ -13,7 +13,7 @@
 #include "channels.h"
 #include "debug.h"
 #include "module.h"
-#include "sigrok_handler.h"
+#include "handles/sigrok_handler.h"
 
 #include <hardware/pio.h>
 
@@ -104,7 +104,9 @@ void ana_channels_apply_trigger(void)
 				uint8_t))capture_prog_trigger_high_level_program_get_default_config;
 			break;
 		default:
-			jmp_pin = 0;
+			jmp_pin = 0xFF;
+			prog = &capture_prog_simple_program;
+			cfg_func = (pio_sm_config(*)(uint8_t))capture_prog_simple_program_get_default_config;
 			break;
 		}
 	}

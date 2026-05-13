@@ -1,7 +1,7 @@
 /**
  * @file board_def.h
  * @author João Matheus Nascimento Dias (joao.dias@edge.ufal.br)
- * @brief Board-specific definitions for the Multi-Signal Analyzer hardware linked to the RP2350A variant (Pico 2)
+ * @brief Board-specific definitions for the Multi-Signal Analyzer hardware linked to the RP230B
  * @version 0.1
  * @date 11/05/2026
  * 

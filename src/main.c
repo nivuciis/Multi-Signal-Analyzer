@@ -30,7 +30,7 @@
 #include "channels.h"
 #include "device/usbd.h"
 #include "led.h"
-#include "sigrok_handler.h"
+#include "handles/sigrok_handler.h"
 #include "usb_util.h"
 #include <stdint.h>
 
@@ -56,6 +56,8 @@ void ana_core1_entry(void)
 	while (1) {
 		if (ana_usb_rx_read(&byte)) {
 			ana_sigrok_handle_process_byte(byte);
+		} else {
+			tight_loop_contents();
 		}
 	}
 }

@@ -13,7 +13,7 @@
 #ifndef MODULE_H
 #define MODULE_H
 
-#include "sigrok_handler.h"
+#include "handles/sigrok_handler.h"
 
 #include <stdbool.h>
 #include <stdint.h>

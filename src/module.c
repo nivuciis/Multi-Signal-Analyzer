@@ -11,7 +11,7 @@
  *******************************************************************/
 #include "log.h"
 #include "module.h"
-#include "sigrok_handler.h"
+#include "handles/sigrok_handler.h"
 
 #include <stdint.h>
 

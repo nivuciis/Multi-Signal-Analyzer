@@ -39,11 +39,6 @@ PICO_DEFAULT_CHANNELS_PIN_COUNT + PICO_DEFAULT_CAN_PIN_COUNT +                  
 /**
  * @brief Command list
  *
- * Identification string format: "SRPICO,AxxyDzz,vv"
- *   xx = number of analog channels (2-digit decimal, e.g. 03)
- *   y  = bytes per analog sample (always 1)
- *   zz = number of digital channels (2-digit decimal, e.g. 12)
- *   vv = protocol version (must be "02")
  */
 enum SIGROK_PROTOCOL_COMMANDS {
 	SIGROK_CMD_IDENTIFY = 'i',            /**< 'i' — Identity query. Responds with "SRPICO,AxxyDzz,02". */

@@ -2,24 +2,25 @@
 
 void handle_set_trigger(void)
 {
-	if (self.cmd_str_index < 3) {
+	struct SIGROK_HANDLER *self = ana_sigrok_get_self();
+	if (self->cmd_str_index < 3) {
 		log_warn("sigrok", "Trigger command too short");
 		return;
 	}
 
-	char type_char = (char)self.cmd_str[1];
+	char type_char = (char)self->cmd_str[1];
 
 	if (type_char == 'n') {
-		self.trigger_config.trigger_mask = 0;
+		self->trigger_config.trigger_mask = 0;
 		log_inf("sigrok", "Trigger disabled");
 		return;
 	}
 
-	int idx = (int)strtol((char *)&self.cmd_str[2], &self.end_ptr, 10);
+	int idx = (int)strtol((char *)&self->cmd_str[2], &self->end_ptr, 10);
 
-	if (self.end_ptr == (char *)&self.cmd_str[2] || self.end_ptr == NULL ||
-	    *self.end_ptr != '\0') {
-		log_warn("sigrok", "Invalid trigger channel: %s", &self.cmd_str[2]);
+	if (self->end_ptr == (char *)&self->cmd_str[2] || self->end_ptr == NULL ||
+	    *self->end_ptr != '\0') {
+		log_warn("sigrok", "Invalid trigger channel: %s", &self->cmd_str[2]);
 		return;
 	}
 
@@ -52,7 +53,7 @@ void handle_set_trigger(void)
 		return;
 	}
 
-	self.trigger_config.trigger_mask = (uint16_t)(1u << ch);
-	self.trigger_config.trigger_type[ch] = trig_type;
+	self->trigger_config.trigger_mask = (uint16_t)(1u << ch);
+	self->trigger_config.trigger_type[ch] = trig_type;
 	log_inf("sigrok", "Trigger set: ch %d type '%c'", ch, type_char);
 }

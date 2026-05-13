@@ -11,6 +11,7 @@
 
 #include "capture_data.h"
 #include "module.h"
+#include "handles/sigrok_handler.h"
 #include <stdint.h>
 
 #include <hardware/adc.h>

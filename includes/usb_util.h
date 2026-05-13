@@ -16,8 +16,8 @@
  *
  *******************************************************************/
 
-#ifndef USB_COMM_H
-#define USB_COMM_H
+#ifndef USB_UTIL_H
+#define USB_UTIL_H
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -84,4 +84,4 @@ bool ana_usb_rx_read(uint8_t *byte);
  */
 void ana_usb_tx_drain(void);
 
-#endif /* USB_COMM_H */
+#endif /* USB_UTIL_H */

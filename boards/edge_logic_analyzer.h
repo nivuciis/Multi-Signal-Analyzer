@@ -33,6 +33,7 @@ pico_board_cmake_set(PICO_PLATFORM, rp2350)
 /**
  * @brief RP2350 variant identifier
  *
+ * @note The RP2350A variant, RP2350B, is the 1 used in the Edge Logic Analyser hardware.
  */
 #define PICO_RP2350A 1
 

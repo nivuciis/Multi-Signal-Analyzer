@@ -19,7 +19,8 @@
 
 #define MODULE_NAME "Channels"
 
-static uint16_t digital_channel_buffer[1024];
+static uint16_t digital_channel_buffer_a[1024];
+static uint16_t digital_channel_buffer_b[1024];
 
 struct ana_module_system channels = {
 	.module =
@@ -41,7 +42,7 @@ void ana_channels_init(PIO pio)
 		(pio_sm_config(*)(uint8_t))capture_prog_simple_program_get_default_config;
 	channels.pio.jmp_pin = 0xFF;
 
-	channels.dma.dma_buffer = digital_channel_buffer;
+	channels.dma.dma_buffer = digital_channel_buffer_a;
 
 	ana_module_pio_init(&channels);
 	ana_module_dma_init(&channels);
@@ -52,6 +53,20 @@ void ana_channels_init(PIO pio)
 struct ana_module_system *ana_channels_get_module(void)
 {
 	return &channels;
+}
+
+uint16_t *ana_channels_get_alt_buffer(void)
+{
+	return (channels.dma.dma_buffer == digital_channel_buffer_a)
+		       ? digital_channel_buffer_b
+		       : digital_channel_buffer_a;
+}
+
+void ana_channels_load_simple(void)
+{
+	ana_module_pio_reload(&channels, &capture_prog_simple_program,
+			      (pio_sm_config(*)(uint8_t))capture_prog_simple_program_get_default_config,
+			      0xFF);
 }
 
 void ana_channels_apply_trigger(void)

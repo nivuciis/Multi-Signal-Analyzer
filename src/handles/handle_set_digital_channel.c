@@ -2,7 +2,7 @@
 
 void handle_set_digital_channel(void)
 {
-	struct SIGROK_HANDLER *self = ana_sigrok_get_self();
+	struct sigrok_handler *self = ana_sigrok_get_self();
 	int enable = self->cmd_str[1] - '0';
 	int ch     = (int)strtol((char *)&self->cmd_str[2], &self->end_ptr, 10);
 	if (self->end_ptr == NULL || *self->end_ptr != '\0') {

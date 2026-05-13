@@ -2,7 +2,7 @@
 
 void handle_fixed_capture(void)
 {
-	struct SIGROK_HANDLER *self = ana_sigrok_get_self();
+	struct sigrok_handler *self = ana_sigrok_get_self();
 
 	run_capture(false);
 	/* The done marker $<n>+\0 is the complete response for capture commands.

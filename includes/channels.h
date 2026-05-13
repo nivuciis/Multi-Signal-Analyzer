@@ -36,4 +36,19 @@ struct ana_module_system* ana_channels_get_module(void);
  */
 void ana_channels_apply_trigger(void);
 
+/**
+ * @brief Return the DMA buffer not currently pointed to by the module's dma_buffer.
+ *
+ * Used for double-buffering: while DMA fills one buffer the other is free for TX.
+ */
+uint16_t *ana_channels_get_alt_buffer(void);
+
+/**
+ * @brief Reload PIO with the simple (no-trigger) capture program.
+ *
+ * Call after the first triggered chunk has completed so that subsequent chunks
+ * do not re-arm the trigger and wait again instead of capturing continuously.
+ */
+void ana_channels_load_simple(void);
+
 #endif /* CHANNELS_H */

@@ -82,7 +82,7 @@
  * @brief Internal structure representing the state of the Sigrok handler.
  *
  */
-struct SIGROK_HANDLER {
+struct sigrok_handler {
 	struct pulseview_sample_config cfg; /**< Configuration for pulseview samples */
 	struct {
 		uint32_t bytes_per_dig_sample; /**< Number of bytes per digital sample */
@@ -90,8 +90,9 @@ struct SIGROK_HANDLER {
 		uint32_t bytes_per_sample;     /**< Total bytes per sample (digital + analog) */
 		uint8_t buf[TX_BUF_SIZE]; /**< Buffer for building responses and capture data */
 	} tx;
-	uint32_t sample_rate;    /**< Sample rate in Hz */
-	uint32_t num_samples;    /**< Number of samples to capture */
+	uint32_t sample_rate;       /**< Sample rate in Hz */
+	uint32_t num_samples;       /**< Number of samples to capture */
+	uint32_t pretrigger_samples; /**< Number of samples to capture before the trigger event */
 	uint16_t digital_mask;   /**< Bitmask of enabled digital channels */
 	uint8_t analog_mask;     /**< Bitmask of enabled analog channels */
 	uint8_t analog_channel;  /**< Currently selected analog channel for single-shot reads */
@@ -126,8 +127,8 @@ void run_capture(bool continuous);
 /**
  * @brief Get a pointer to the global SIGROK_HANDLER instance.
  *
- * @return struct SIGROK_HANDLER* Pointer to the handler state.
+ * @return struct sigrok_handler* Pointer to the handler state.
  */
-struct SIGROK_HANDLER *ana_sigrok_get_self(void);
+struct sigrok_handler *ana_sigrok_get_self(void);
 
 #endif /* HANDLES_INTERNAL_H */

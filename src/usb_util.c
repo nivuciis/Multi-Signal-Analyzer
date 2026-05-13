@@ -10,9 +10,15 @@
  *
  * @author João Matheus Nascimento Dias (joao.dias@edge.ufal.br)
  * @author Vinicius Rafael Marques de Carvalho (vinicius.carvalho@edge.ufal.br)
- * @version 0.1
+ * @version 0.5
  * @date 07/05/2026
  *
+ * @note Ring buffer is used to decouple the USB CDC processing (Core 0) from the Sigrok protocol handling (Core 1).  
+ * 		This allows Core 1 to process data at its own pace without blocking Core 0's USB tasks, and vice versa.
+ *
+ * @note the __dmb() calls ensure memory ordering between the cores, preventing race conditions when checking connection status and updating ring buffer indices.
+ *		Ensuring that all memory accesses prior to the __dmb() call occur before subsequent instructions. Blocks CPU optimizations that could reorder memory accesses 
+ *		across the barrier, which is crucial for correct synchronization between the two cores when checking connection status and updating ring buffer indices.
  * @copyright Copyright (c) 2026
  *
  *******************************************************************/
@@ -39,12 +45,15 @@ static volatile bool usb_connected = false;
 
 bool ana_usb_is_connected(void)
 {
+	__dmb();
 	return usb_connected;
 }
 
 void ana_usb_set_connected(bool connected)
 {
+	__dmb();
 	usb_connected = connected;
+	__dmb();
 }
 
 void ana_usb_rx_write(const uint8_t *data, uint32_t len)
@@ -55,7 +64,9 @@ void ana_usb_rx_write(const uint8_t *data, uint32_t len)
 		uint32_t next = (head + 1u) & (RX_RING_SIZE - 1u);
 
 		while (next == rx_tail) {
+			__dmb();
 			if (!ana_usb_is_connected()) {
+				__dmb();
 				rx_head = head;
 				return;
 			}
@@ -95,6 +106,7 @@ bool ana_usb_write(const uint8_t *buf, uint32_t len)
 
 		/* Spin until Core 0 drains enough space; abort if disconnected */
 		while (next == tx_tail) {
+			__dmb();
 			if (!ana_usb_is_connected()) {
 				return false;
 			}
@@ -112,8 +124,8 @@ bool ana_usb_write(const uint8_t *buf, uint32_t len)
 
 void ana_usb_tx_drain(void)
 {
-	uint32_t head = tx_head;
 	__dmb();
+	uint32_t head = tx_head;
 	uint32_t tail = tx_tail;
 	bool flushed  = false;
 
@@ -138,6 +150,8 @@ void ana_usb_tx_drain(void)
 
 	if (flushed) {
 		tud_cdc_write_flush();
+
+		__dmb();
 		tx_tail = tail;
 	}
 }

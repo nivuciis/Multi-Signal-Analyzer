@@ -22,7 +22,6 @@
  *   usb_util rx_ring → ana_sigrok_handle_process_byte() → usb_util tx_ring
  *                                                          (via ana_usb_write)
  *
- * Ring buffer logic lives in usb_util.c.  Both ring sizes must be a power of 2.
  */
 
 #include "adc.h"

@@ -40,11 +40,6 @@ void ana_module_pio_init(struct ana_module_system *config)
 
 	pio_sm_set_consecutive_pindirs(config->pio.instance, config->pio.sm,
 				       config->module.pin_base, config->module.pin_count, false);
-	/* Do NOT override wrap here — the program's get_default_cfg_func already
-	 * sets the correct wrap_target / wrap pair from the .wrap_target / .wrap
-	 * directives in the PIO source.  Overriding with (offset, offset+length-1)
-	 * would force the wrap to jump back to instruction 0 (the trigger preamble)
-	 * instead of to the CAPTURE label, corrupting every triggered capture. */
 	sm_config_set_in_pins(&sm_cfg, config->module.pin_base);
 	sm_config_set_in_shift(&sm_cfg, false, true, 16);
 
@@ -88,6 +83,11 @@ void ana_module_pio_dma_start(struct ana_module_system *config)
 
 	config->dma.has_complete = false;
 
+	pio_sm_set_enabled(config->pio.instance, config->pio.sm, false);
+	pio_sm_clear_fifos(config->pio.instance, config->pio.sm);
+	pio_sm_restart(config->pio.instance, config->pio.sm);
+	pio_sm_exec(config->pio.instance, config->pio.sm, pio_encode_jmp(config->pio.pio_offset));
+
 	dma_channel_configure(config->dma.instance, &config->dma.instance_cfg,
 			      config->dma.dma_buffer, &config->pio.instance->rxf[config->pio.sm],
 			      cfg->samples, false);
@@ -110,6 +110,7 @@ bool ana_module_pio_dma_is_busy(struct ana_module_system *config)
 
 void ana_module_pio_dma_abort(struct ana_module_system *config)
 {
+	pio_sm_set_enabled(config->pio.instance, config->pio.sm, false);
 	dma_channel_abort(config->dma.instance);
 
 	if (config->dma.callback) {

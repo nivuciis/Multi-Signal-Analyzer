@@ -2,7 +2,7 @@
 
 void handle_set_trigger(void)
 {
-	struct SIGROK_HANDLER *self = ana_sigrok_get_self();
+	struct sigrok_handler *self = ana_sigrok_get_self();
 	if (self->cmd_str_index < 3) {
 		log_warn("sigrok", "Trigger command too short");
 		return;

@@ -10,7 +10,11 @@
  *  ------------------------------------------------------------*/
 
 #include "capture_data.h"
+#include "handles/sigrok_handler.h"
+#include "led.h"
 #include "module.h"
+#include "usb_util.h"
+
 #include <stdint.h>
 
 #include <hardware/adc.h>
@@ -57,8 +61,19 @@ static int ana_get_first_analog_channel(uint8_t analog_mask)
 
 void ana_capture_data_start(struct ana_module_system *config)
 {
+	ana_led_set_status(LED_STATUS_CAPTURING);
 	ana_capture_init(config);
-
 	ana_module_pio_dma_start(config);
-	ana_module_pio_dma_wait(config);
+}
+
+bool ana_capture_data_wait(struct ana_module_system *config)
+{
+	while (ana_module_pio_dma_is_busy(config)) {
+		if (!ana_usb_is_connected()) {
+			ana_module_pio_dma_abort(config);
+			return false;
+		}
+	}
+	config->dma.has_complete = true;
+	return true;
 }

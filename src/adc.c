@@ -95,7 +95,7 @@ float ana_adc_read(uint8_t channel)
 {
 	adc_run(false);
 	adc_select_input(ADC_GPIO_TO_HW_CH(channel));
-	return (float)(adc_read() & 0x0FFFu) * ADC_MV_PER_LSB;
+	return (float)(adc_read());
 }
 
 void ana_adc_capture_dma(uint32_t samples, uint8_t analog_mask)

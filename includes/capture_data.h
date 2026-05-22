@@ -19,11 +19,19 @@
 int ana_capture_init(struct ana_module_system *config);
 
 /**
- * @brief Start the capture processing
+ * @brief Start the DMA capture (non-blocking). Call ana_capture_data_wait() to wait.
  *
  * @param config Module configuration structure
  */
 void ana_capture_data_start(struct ana_module_system *config);
+
+/**
+ * @brief Wait for DMA to finish, aborting on USB disconnect.
+ *
+ * @param config Module configuration structure
+ * @return true if DMA completed normally, false if aborted (USB disconnected)
+ */
+bool ana_capture_data_wait(struct ana_module_system *config);
 
 /**
  * @brief Get the analog channels count

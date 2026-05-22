@@ -11,56 +11,91 @@
  *
  *******************************************************************/
 
-#include "capture_data.h"
-#include "channels.h"
-#include "led.h"
-#include "sigrok_handler.h"
-#include "adc.h"
-
-#include <hardware/timer.h>
-#include <pico/stdlib.h>
-#include <pico/time.h>
-#include <tusb.h>
-
-static char buf[64];
-/**
- * @brief Callback to synchronize the LED status with the USB connection state
+/*
+ * Multicore architecture
+ * ----------------------
+ * Core 0 — USB focused:
+ *   tud_task() loop + tud_cdc_read() → usb_util rx_ring
+ *                                    + usb_util tx_ring → tud_cdc_write()
+ *
+ * Core 1 — Sigrok processing:
+ *   usb_util rx_ring → ana_sigrok_handle_process_byte() → usb_util tx_ring
+ *                                                          (via ana_usb_write)
  *
  */
-static bool ana_sync_led_with_usb_connnection(struct repeating_timer *rt)
+
+#include "adc.h"
+#include "capture_data.h"
+#include "channels.h"
+#include "device/usbd.h"
+#include "led.h"
+#include "handles/sigrok_handler.h"
+#include "usb_util.h"
+#include <stdint.h>
+
+#include <hardware/timer.h>
+#include <pico/multicore.h>
+#include <pico/stdlib.h>
+#include <pico/time.h>
+#include <pico/types.h>
+#include <tusb.h>
+
+static bool ana_sync_led_with_usb_connection(struct repeating_timer *rt)
 {
-	bool is_usb_connected = tud_cdc_connected();
-	ana_led_set_status((is_usb_connected) ? LED_STATUS_CONNECTED : LED_STATUS_OFF);
+	bool connected = tud_cdc_connected();
+	ana_usb_set_connected(connected);
+	ana_led_set_status(connected ? LED_STATUS_CONNECTED : LED_STATUS_OFF);
 	return true;
 }
 
-int main()
+void ana_core1_entry(void)
 {
+	uint8_t byte;
+
+	while (1) {
+		if (ana_usb_rx_read(&byte)) {
+			ana_sigrok_handle_process_byte(byte);
+		} else {
+			tight_loop_contents();
+		}
+	}
+}
+
+int main(void)
+{
+	multicore_reset_core1();
+
 	ana_led_init();
 	tusb_init();
 	ana_sigrok_handle_init();
 	ana_channels_init(pio0);
 	ana_adc_init();
 
-	struct repeating_timer usb_conection_timer;
+	multicore_launch_core1(ana_core1_entry);
+
+	struct repeating_timer usb_connection_timer;
 
 	if (ana_capture_init(ana_channels_get_module()) != PICO_OK) {
 		ana_led_set_status(LED_STATUS_ERROR);
 		return PICO_ERROR_IO;
 	}
-	
-	add_repeating_timer_ms(100, ana_sync_led_with_usb_connnection, NULL, &usb_conection_timer);
+
+	add_repeating_timer_ms(100, ana_sync_led_with_usb_connection, NULL,
+			       &usb_connection_timer);
+
+	uint8_t tmp[64];
 
 	while (1) {
 		tud_task();
 
+		/* CDC → RX ring (Core 1 will consume) */
 		if (tud_cdc_available()) {
-			uint32_t count = tud_cdc_read(buf, sizeof(buf));
-			for (uint32_t i = 0; i < count; i++) {
-				ana_sigrok_handle_process_byte(buf[i]);
-			}
+			uint32_t count = tud_cdc_read(tmp, sizeof(tmp));
+			ana_usb_rx_write(tmp, count);
 		}
-		__wfi();
+
+		/* TX ring → CDC (Core 1 produced, we send) */
+		ana_usb_tx_drain();
 	}
 
 	return 0;

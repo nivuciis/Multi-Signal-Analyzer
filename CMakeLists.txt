@@ -50,6 +50,7 @@ add_executable(multi_signal_analyzer
 
 include_directories(multi_signal_analyzer
             ${INCLUDE_DIRS}
+            ${CMAKE_CURRENT_LIST_DIR}/boards
         )
 
 pico_set_program_name(multi_signal_analyzer "multi_signal_analyzer")
@@ -75,6 +76,7 @@ target_link_libraries(multi_signal_analyzer
             hardware_clocks
             hardware_timer
             pico_stdlib
+            pico_multicore
             tinyusb_device
             tinyusb_board
         )
@@ -88,8 +90,19 @@ target_include_directories(multi_signal_analyzer PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
 )
 
-# Add any user requested libraries
 
+target_link_options(multi_signal_analyzer PRIVATE
+    "-Wl,-Map=${CMAKE_BINARY_DIR}/multi_signal_analyzer.map"
+)
 
 pico_add_extra_outputs(multi_signal_analyzer)
+
+# Generate detailed firmware size report with memory usage analysis
+add_custom_command(TARGET multi_signal_analyzer POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E echo "Generating firmware size report..."
+    COMMAND python3 ${CMAKE_CURRENT_LIST_DIR}/tools/firmware_size_report.py 
+            $<TARGET_FILE:multi_signal_analyzer>
+            --log ${CMAKE_BINARY_DIR}/size_history.csv
+    VERBATIM
+)
 

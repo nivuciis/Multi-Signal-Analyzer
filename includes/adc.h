@@ -13,7 +13,7 @@
 #define ADC_H
 
 #include "module.h"
-#include "sigrok_handler.h"
+#include "handles/sigrok_handler.h"
 
 #include <stdint.h>
 #include <hardware/adc.h>
@@ -48,7 +48,7 @@ void ana_adc_init(void);
 void ana_adc_set_clkdiv(float clkdiv);
 
 /**
- * @brief Single-shot read of one channel, returns millivolts.
+ * @brief Single-shot read of one channel.
  *
  * @param channel Board GPIO number (e.g. PICO_DEFAULT_ADC_CHANNEL_1).
  * @return float  Reading in millivolts.

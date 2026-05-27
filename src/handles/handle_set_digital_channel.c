@@ -9,7 +9,7 @@ void handle_set_digital_channel(void)
 		log_warn("sigrok", "Invalid digital channel");
 		return;
 	}
-	if (ch >= 0 && ch < PICO_DEFAULT_CHANNELS_PIN_COUNT) {
+	if (ch >= 0 && ch < MAX_NUM_CHANNELS) {
 		if (enable) {
 			self->digital_mask |= (uint16_t)(1u << ch);
 		} else {

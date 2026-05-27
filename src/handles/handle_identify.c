@@ -1,7 +1,7 @@
 #include "handles/handles_internal.h"
 #include "led.h"
 
-#define SIGROK_IDENT_STRING "SRPICO,A031D12,02"
+#define SIGROK_IDENT_STRING "SRPICO,A031D13,02"
 
 void handle_identify(void)
 {

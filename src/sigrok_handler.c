@@ -17,6 +17,7 @@
 #include "adc.h"
 #include "capture_data.h"
 #include "channels.h"
+#include "rs485.h"
 #include "handles/handles.h"
 #include "handles/handles_internal.h"
 #include "led.h"
@@ -139,12 +140,22 @@ static inline bool tx_reserve(struct tx_stream *tx, uint32_t needed)
 	return true;
 }
 
-static bool ana_send_packet_channels(const uint16_t *dig_buf, uint32_t chunk_samples,
-				     uint32_t *bytes_out)
+/*
+ * Merge channels and RS485 into a single 16-bit digital word:
+ *   channels: PIO word bits 15-4 → right-shift 4 → bits 11-0  (channels 0-11)
+ *   RS485:    PIO word bit  15   → right-shift 15 → bit 0, then shift to bit 12 (channel 12)
+ */
+static inline uint16_t merge_digital_sample(uint16_t ch_word, uint16_t rs485_word)
+{
+	uint16_t ch_bits    = (uint16_t)(ch_word >> 4);
+	uint16_t rs485_bit  = (uint16_t)((rs485_word >> 15) & 0x0001u);
+	return (uint16_t)(ch_bits | (uint16_t)(rs485_bit << 12u));
+}
+
+static bool ana_send_packet_channels(const uint16_t *dig_buf, const uint16_t *rs485_buf,
+				     uint32_t chunk_samples, uint32_t *bytes_out)
 {
 	struct ana_adc_module *adc = ana_adc_get_module();
-
-	const uint16_t *dig = dig_buf;
 
 	struct tx_stream tx = {
 		.idx = 0,
@@ -162,7 +173,8 @@ static bool ana_send_packet_channels(const uint16_t *dig_buf, uint32_t chunk_sam
 
 		for (uint32_t i = 0; i < chunk_samples; i++) {
 
-			uint16_t sample = (uint16_t)((dig[i] >> 4) & self.digital_mask);
+			uint16_t sample = (uint16_t)(
+				merge_digital_sample(dig_buf[i], rs485_buf[i]) & self.digital_mask);
 
 			uint32_t needed = self.tx.bytes_per_dig_sample + active_analog_count;
 
@@ -202,7 +214,8 @@ static bool ana_send_packet_channels(const uint16_t *dig_buf, uint32_t chunk_sam
 
 	for (uint32_t i = 0; i < chunk_samples; i++) {
 
-		uint16_t cur = (uint16_t)((dig[i] >> 4) & self.digital_mask);
+		uint16_t cur = (uint16_t)(
+			merge_digital_sample(dig_buf[i], rs485_buf[i]) & self.digital_mask);
 
 		if (!tx_reserve(&tx, self.tx.bytes_per_dig_sample)) {
 			return false;
@@ -229,44 +242,62 @@ static bool ana_send_packet_channels(const uint16_t *dig_buf, uint32_t chunk_sam
 static bool capture_chunks(struct ana_module_system *config, uint32_t n_samples,
 			   uint32_t *total_sent)
 {
+	struct ana_module_system *rs485_mod = ana_rs485_get_module();
+
 	uint32_t remaining = n_samples;
 
 	/*
-	 * Ping-pong DMA buffers: while DMA fills cap_buf, the CPU sends the
-	 * previously captured tx_buf over USB.  The TX ring is drained by Core 0
-	 * asynchronously, so ana_send_packet_channels() returns as soon as data
-	 * is queued — the actual USB transfer overlaps the next DMA capture.
+	 * Ping-pong DMA buffers for both channels and RS485: while DMA fills
+	 * cap_buf the CPU sends the previously captured tx_buf over USB.
 	 */
-	uint16_t *buf[2] = {config->dma.dma_buffer, ana_channels_get_alt_buffer()};
-	int cap_idx = 0;
-	uint16_t *tx_buf = NULL;
-	uint32_t tx_samples = 0;
+	uint16_t *buf[2]       = {config->dma.dma_buffer, ana_channels_get_alt_buffer()};
+	uint16_t *buf_rs485[2] = {rs485_mod->dma.dma_buffer, ana_rs485_get_alt_buffer()};
+	int cap_idx            = 0;
+	uint16_t *tx_buf       = NULL;
+	uint16_t *tx_rs485_buf = NULL;
+	uint32_t tx_samples    = 0;
 
 	while (remaining > 0 && ana_usb_is_connected()) {
 		uint32_t chunk = (remaining < CAPTURE_CHUNK_SIZE) ? remaining : CAPTURE_CHUNK_SIZE;
 
 		self.cfg.samples = chunk;
 		ana_module_set_sample_rate(config);
+		ana_module_set_sample_rate(rs485_mod);
 
-		/* Arm DMA into the capture buffer */
-		config->dma.dma_buffer = buf[cap_idx];
-		memset(buf[cap_idx], 0, chunk * sizeof(uint16_t));
+		/* Arm DMA for channels and RS485 simultaneously */
+		config->dma.dma_buffer    = buf[cap_idx];
+		rs485_mod->dma.dma_buffer = buf_rs485[cap_idx];
+		memset(buf[cap_idx],       0, chunk * sizeof(uint16_t));
+		memset(buf_rs485[cap_idx], 0, chunk * sizeof(uint16_t));
 		ana_capture_data_start(config);
+		ana_capture_data_start(rs485_mod);
 
-		/* Send previous chunk while DMA runs */
+		/* Send previous chunk while both DMAs run */
 		if (tx_buf != NULL) {
 			uint32_t chunk_bytes = 0;
-			if (!ana_send_packet_channels(tx_buf, tx_samples, &chunk_bytes)) {
+			if (!ana_send_packet_channels(tx_buf, tx_rs485_buf, tx_samples,
+						      &chunk_bytes)) {
 				ana_module_pio_dma_abort(config);
-				config->dma.dma_buffer = buf[0];
+				ana_module_pio_dma_abort(rs485_mod);
+				config->dma.dma_buffer    = buf[0];
+				rs485_mod->dma.dma_buffer = buf_rs485[0];
 				return false;
 			}
 			*total_sent += chunk_bytes;
 		}
 
-		/* Wait for DMA, aborting on USB disconnect */
+		/* Wait for channels DMA; on failure abort RS485 too */
 		if (!ana_capture_data_wait(config)) {
-			config->dma.dma_buffer = buf[0];
+			ana_module_pio_dma_abort(rs485_mod);
+			config->dma.dma_buffer    = buf[0];
+			rs485_mod->dma.dma_buffer = buf_rs485[0];
+			return false;
+		}
+
+		/* Wait for RS485 DMA (starts with channels, finishes ~simultaneously) */
+		if (!ana_capture_data_wait(rs485_mod)) {
+			config->dma.dma_buffer    = buf[0];
+			rs485_mod->dma.dma_buffer = buf_rs485[0];
 			return false;
 		}
 
@@ -275,8 +306,9 @@ static bool capture_chunks(struct ana_module_system *config, uint32_t n_samples,
 			ana_adc_capture_dma(chunk, self.analog_mask);
 		}
 
-		tx_buf = buf[cap_idx];
-		tx_samples = chunk;
+		tx_buf       = buf[cap_idx];
+		tx_rs485_buf = buf_rs485[cap_idx];
+		tx_samples   = chunk;
 		cap_idx ^= 1;
 		remaining -= chunk;
 	}
@@ -284,14 +316,16 @@ static bool capture_chunks(struct ana_module_system *config, uint32_t n_samples,
 	/* Send the final captured chunk */
 	if (tx_buf != NULL && ana_usb_is_connected()) {
 		uint32_t chunk_bytes = 0;
-		if (!ana_send_packet_channels(tx_buf, tx_samples, &chunk_bytes)) {
-			config->dma.dma_buffer = buf[0];
+		if (!ana_send_packet_channels(tx_buf, tx_rs485_buf, tx_samples, &chunk_bytes)) {
+			config->dma.dma_buffer    = buf[0];
+			rs485_mod->dma.dma_buffer = buf_rs485[0];
 			return false;
 		}
 		*total_sent += chunk_bytes;
 	}
 
-	config->dma.dma_buffer = buf[0];
+	config->dma.dma_buffer    = buf[0];
+	rs485_mod->dma.dma_buffer = buf_rs485[0];
 	return true;
 }
 

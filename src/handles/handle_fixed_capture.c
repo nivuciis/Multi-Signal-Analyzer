@@ -1,4 +1,5 @@
 #include "handles/handles_internal.h"
+#include <stdbool.h>
 
 void handle_fixed_capture(void)
 {

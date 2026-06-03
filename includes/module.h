@@ -51,6 +51,17 @@ struct ana_module_dma {
 	volatile bool has_complete;      /**< DMA completion flag */
 	void (*callback)(void);          /**< DMA callback function */
 	dma_channel_config instance_cfg; /**< DMA channel configuration */
+
+	/* Chained ping-pong state (gap-free continuous digital capture).
+	 * Two DMA channels (instance = A, instance_b = B) auto-chain so the PIO
+	 * never stalls; an IRQ recycles each buffer and tracks producer count. */
+	uint8_t instance_b;          /**< Second ping-pong DMA channel */
+	uint16_t *buf_a;             /**< Ping-pong buffer A (filled by instance) */
+	uint16_t *buf_b;             /**< Ping-pong buffer B (filled by instance_b) */
+	uint32_t pp_chunk;           /**< Samples per ping-pong buffer */
+	volatile uint32_t pp_produced; /**< Buffers completed by DMA (IRQ) */
+	volatile uint32_t pp_consumed; /**< Buffers consumed by Core 1 */
+	volatile bool pp_overflow;     /**< Producer lapped consumer → data loss */
 };
 
 /**
@@ -143,4 +154,31 @@ void ana_module_set_sample_rate(struct ana_module_system *config);
  */
 void ana_module_pio_reload(struct ana_module_system *config, const pio_program_t *new_program,
 			   pio_sm_config (*new_cfg_func)(uint8_t offset), uint8_t jmp_pin);
+
+/**
+ * @brief Register a module for chained ping-pong capture.
+ *
+ * Claims the second DMA channel and records the two ring buffers. Call once
+ * after ana_module_dma_init(). The actual channel config is (re)applied in
+ * ana_module_pingpong_start() so it always tracks the current PIO SM/DREQ
+ * (which changes across ana_module_pio_reload()).
+ *
+ * @param config Module to register.
+ * @param buf_a  First ring buffer (>= chunk samples).
+ * @param buf_b  Second ring buffer (>= chunk samples).
+ * @param chunk  Samples per buffer.
+ */
+void ana_module_pingpong_init(struct ana_module_system *config, uint16_t *buf_a, uint16_t *buf_b,
+			      uint32_t chunk);
+
+/**
+ * @brief Start gap-free chained ping-pong capture. PIO runs continuously.
+ */
+void ana_module_pingpong_start(struct ana_module_system *config);
+
+/**
+ * @brief Stop ping-pong capture: halt PIO and abort both DMA channels.
+ */
+void ana_module_pingpong_stop(struct ana_module_system *config);
+
 #endif /* MODULE_H */

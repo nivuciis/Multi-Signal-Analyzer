@@ -23,17 +23,15 @@
 #define DIGITAL_CHANNEL_SIZE 12
 #define ANALOG_CHANNEL_SIZE  3
 
-static struct pulseview_sample_config *cfg;
-
 int ana_capture_init(struct ana_module_system *config)
 {
 	if (ana_module_pio_dma_is_busy(config)) {
 		ana_module_pio_dma_abort(config);
 	}
 
-	cfg = ana_sigrok_get_sample_config();
-
-	memset(config->dma.dma_buffer, 0, cfg->samples * sizeof(uint16_t));
+	/* No memset: ana_module_pio_dma_start transfers cfg->samples words into
+	 * dma_buffer and the sender reads exactly that many, so DMA overwrites
+	 * every consumed word. Zeroing here is dead work in the capture loop. */
 
 	return PICO_OK;
 }
@@ -69,7 +67,8 @@ void ana_capture_data_start(struct ana_module_system *config)
 bool ana_capture_data_wait(struct ana_module_system *config)
 {
 	while (ana_module_pio_dma_is_busy(config)) {
-		if (!ana_usb_is_connected()) {
+
+		if (!ana_usb_is_connected() || ana_usb_abort_requested()) {
 			ana_module_pio_dma_abort(config);
 			return false;
 		}

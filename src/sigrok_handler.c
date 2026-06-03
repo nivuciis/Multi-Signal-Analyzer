@@ -141,14 +141,15 @@ static inline bool tx_reserve(struct tx_stream *tx, uint32_t needed)
 }
 
 /*
- * Merge channels and RS485 into a single 16-bit digital word:
- *   channels: PIO word bits 15-4 → right-shift 4 → bits 11-0  (channels 0-11)
- *   RS485:    PIO word bit  15   → right-shift 15 → bit 0, then shift to bit 12 (channel 12)
+ * Merge channels and RS485 into a single 16-bit digital word. With per-module
+ * autopush thresholds the samples land right-aligned in their PIO words:
+ *   channels: PIO word bits 11-0 → channels 0-11
+ *   RS485:    PIO word bit  0    → shift to bit 12 (channel 12)
  */
 static inline uint16_t merge_digital_sample(uint16_t ch_word, uint16_t rs485_word)
 {
-	uint16_t ch_bits    = (uint16_t)(ch_word >> 4);
-	uint16_t rs485_bit  = (uint16_t)((rs485_word >> 15) & 0x0001u);
+	uint16_t ch_bits    = (uint16_t)(ch_word & 0x0FFFu);
+	uint16_t rs485_bit  = (uint16_t)(rs485_word & 0x0001u);
 	return (uint16_t)(ch_bits | (uint16_t)(rs485_bit << 12u));
 }
 
@@ -256,15 +257,18 @@ static bool capture_chunks(struct ana_module_system *config, uint32_t n_samples,
 	uint16_t *tx_buf       = NULL;
 	uint16_t *tx_rs485_buf = NULL;
 	uint32_t tx_samples    = 0;
+	bool adc_overflow      = false;
 
-	while (remaining > 0 && ana_usb_is_connected()) {
+	while (remaining > 0 && ana_usb_is_connected() && !ana_usb_abort_requested()) {
 		uint32_t chunk = (remaining < CAPTURE_CHUNK_SIZE) ? remaining : CAPTURE_CHUNK_SIZE;
 
 		self.cfg.samples = chunk;
 		ana_module_set_sample_rate(config);
 		ana_module_set_sample_rate(rs485_mod);
 
-		/* Arm DMA for channels and RS485 simultaneously */
+		/* Clear the capture buffers before arming so an aborted/short DMA
+		 * can never leave stale samples from a previous acquisition in the
+		 * region the sender reads. */
 		config->dma.dma_buffer    = buf[cap_idx];
 		rs485_mod->dma.dma_buffer = buf_rs485[cap_idx];
 		memset(buf[cap_idx],       0, chunk * sizeof(uint16_t));
@@ -303,7 +307,12 @@ static bool capture_chunks(struct ana_module_system *config, uint32_t n_samples,
 
 		/* ADC capture happens after digital DMA (sequential per chunk) */
 		if (self.tx.active_analog_ch > 0) {
-			ana_adc_capture_dma(chunk, self.analog_mask);
+			if (!ana_adc_capture_dma(chunk, self.analog_mask)) {
+				/* FIFO overflow: stop and let run_capture emit the
+				 * device-detected abort marker to the host. */
+				adc_overflow = true;
+				break;
+			}
 		}
 
 		tx_buf       = buf[cap_idx];
@@ -313,8 +322,9 @@ static bool capture_chunks(struct ana_module_system *config, uint32_t n_samples,
 		remaining -= chunk;
 	}
 
-	/* Send the final captured chunk */
-	if (tx_buf != NULL && ana_usb_is_connected()) {
+	/* Send the final captured chunk (skip if the host aborted: '+' means
+	 * stop sending data immediately). */
+	if (tx_buf != NULL && ana_usb_is_connected() && !ana_usb_abort_requested()) {
 		uint32_t chunk_bytes = 0;
 		if (!ana_send_packet_channels(tx_buf, tx_rs485_buf, tx_samples, &chunk_bytes)) {
 			config->dma.dma_buffer    = buf[0];
@@ -326,7 +336,70 @@ static bool capture_chunks(struct ana_module_system *config, uint32_t n_samples,
 
 	config->dma.dma_buffer    = buf[0];
 	rs485_mod->dma.dma_buffer = buf_rs485[0];
-	return true;
+	return !adc_overflow;
+}
+
+/*
+ * Gap-free digital capture using chained ping-pong DMA. The PIO runs without
+ * stopping between chunks, so the sample stream has no inter-chunk time gaps
+ * (unlike capture_chunks, which restarts the PIO each chunk). Used only when no
+ * analog channel is enabled — mixed mode keeps the chunked path for ADC sync.
+ *
+ * Buffer N of the channels ring is sent together with buffer N of the RS485
+ * ring; both rings run at the same rate and start together, so the merge stays
+ * sample-aligned. A producer that laps the consumer (USB too slow) trips
+ * pp_overflow → abort, matching the protocol's continuous-stream overflow.
+ */
+static bool capture_continuous_digital(uint32_t n_samples, uint32_t *total_sent)
+{
+	struct ana_module_system *ch = ana_channels_get_module();
+	struct ana_module_system *rs = ana_rs485_get_module();
+
+	ana_module_pingpong_start(ch);
+	ana_module_pingpong_start(rs);
+
+	uint32_t need     = (n_samples + CAPTURE_CHUNK_SIZE - 1u) / CAPTURE_CHUNK_SIZE;
+	uint32_t consumed = 0;
+	bool ok           = true;
+
+	while (consumed < need) {
+		/* Wait until both rings have completed the buffer at index `consumed` */
+		while (ch->dma.pp_produced <= consumed || rs->dma.pp_produced <= consumed) {
+			if (!ana_usb_is_connected() || ana_usb_abort_requested() ||
+			    ch->dma.pp_overflow || rs->dma.pp_overflow) {
+				ok = false;
+				goto stop;
+			}
+		}
+
+		uint32_t idx    = consumed & 1u;
+		uint16_t *dbuf  = (idx == 0u) ? ch->dma.buf_a : ch->dma.buf_b;
+		uint16_t *rbuf  = (idx == 0u) ? rs->dma.buf_a : rs->dma.buf_b;
+		uint32_t remain = n_samples - consumed * CAPTURE_CHUNK_SIZE;
+		uint32_t samples = (remain < CAPTURE_CHUNK_SIZE) ? remain : CAPTURE_CHUNK_SIZE;
+
+		/* Claim the buffer first so the producer keeps a full buffer of slack */
+		consumed++;
+		ch->dma.pp_consumed = consumed;
+		rs->dma.pp_consumed = consumed;
+
+		uint32_t bytes = 0;
+		if (!ana_send_packet_channels(dbuf, rbuf, samples, &bytes)) {
+			ok = false;
+			goto stop;
+		}
+		*total_sent += bytes;
+
+		if (ch->dma.pp_overflow || rs->dma.pp_overflow) {
+			ok = false;
+			goto stop;
+		}
+	}
+
+stop:
+	ana_module_pingpong_stop(ch);
+	ana_module_pingpong_stop(rs);
+	return ok;
 }
 
 void run_capture(bool continuous)
@@ -334,6 +407,17 @@ void run_capture(bool continuous)
 	struct ana_module_system *config = ana_channels_get_module();
 
 	tx_init();
+
+	/* Align the ADC conversion rate with the requested capture rate so
+	 * analog samples are time-aligned with the digital stream. */
+	if (self.tx.active_analog_ch > 0) {
+		ana_adc_set_rate(self.cfg.sample_rate_hz);
+	}
+
+	/* Drop any stale abort left by the '*' the host always sends right before
+	 * a capture; only aborts seen from here on belong to this acquisition. */
+	ana_usb_clear_abort();
+
 	ana_led_set_status(LED_STATUS_CAPTURING);
 
 	do {
@@ -345,6 +429,37 @@ void run_capture(bool continuous)
 					      ? self.pretrigger_samples
 					      : 0;
 		uint32_t post_samples = self.num_samples - pretrigger;
+
+		/*
+		 * Digital-only, no pretrigger → gap-free chained ping-pong path.
+		 * The PIO trigger program (if any) is applied once and fires at the
+		 * start of the continuous stream. Mixed analog or pretrigger modes
+		 * fall through to the chunked path below.
+		 */
+		if (self.tx.active_analog_ch == 0 && pretrigger == 0) {
+			ana_channels_apply_trigger();
+			ana_module_set_sample_rate(config);
+			ana_module_set_sample_rate(ana_rs485_get_module());
+
+			ok = capture_continuous_digital(self.num_samples, &total_sent);
+
+			self.cfg.samples = self.num_samples;
+
+			if (ana_usb_abort_requested()) {
+				log_inf("sigrok", "Capture aborted by host");
+				break;
+			}
+			if (!ok) {
+				ana_usb_write((const uint8_t *)"!!!$0+", 6U);
+				log_warn("sigrok", "Capture aborted (overflow/disconnect)");
+				break;
+			}
+
+			char dm[32];
+			snprintf(dm, sizeof(dm), "$%lu+", (unsigned long)total_sent);
+			ana_usb_write((const uint8_t *)dm, strlen(dm));
+			continue;
+		}
 
 		/* Phase 1: pretrigger — simple capture with no trigger wait */
 		if (pretrigger > 0) {
@@ -389,6 +504,13 @@ void run_capture(bool continuous)
 		}
 
 		self.cfg.samples = self.num_samples;
+
+		/* Host-forced abort ('+' stop or '*' reset): stop immediately and
+		 * send no further markers — the host already terminated the stream. */
+		if (ana_usb_abort_requested()) {
+			log_inf("sigrok", "Capture aborted by host");
+			break;
+		}
 
 		if (!ok) {
 			ana_usb_write((const uint8_t *)"!!!$0+", 6U);
@@ -450,6 +572,18 @@ void ana_sigrok_handle_process_byte(uint8_t received_command)
 	if (received_command == '*') {
 		ana_sigrok_handle_init();
 		ana_led_set_status(LED_STATUS_OFF);
+		return;
+	}
+
+	/*
+	 * '+' is a host-forced abort of an in-progress capture. Captures run to
+	 * completion on core 1, so by the time this byte is parsed the stream has
+	 * already ended; drop any partial command so '+' is not accumulated into
+	 * cmd_str. Unlike '*' it does not reset configuration state.
+	 */
+	if (received_command == '+') {
+		self.cmd_str_index = 0;
+		self.last_was_cr = false;
 		return;
 	}
 

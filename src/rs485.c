@@ -45,6 +45,7 @@ void ana_rs485_init(PIO pio)
 
 	ana_module_pio_init(&rs485);
 	ana_module_dma_init(&rs485);
+	ana_module_pingpong_init(&rs485, rs485_buffer_a, rs485_buffer_b, 1024);
 }
 
 struct ana_module_system *ana_rs485_get_module(void)

@@ -15,6 +15,7 @@
 #include "module.h"
 #include "handles/sigrok_handler.h"
 
+#include <stdbool.h>
 #include <stdint.h>
 #include <hardware/adc.h>
 #include <hardware/dma.h>
@@ -48,6 +49,17 @@ void ana_adc_init(void);
 void ana_adc_set_clkdiv(float clkdiv);
 
 /**
+ * @brief Set the ADC sample rate, deriving and clamping the clock divider.
+ *
+ * Keeps the analog conversion rate aligned with the requested capture rate
+ * (clamped to the 500 kSps hard limit). Without this the ADC free-runs and
+ * analog samples are time-distorted relative to the digital stream.
+ *
+ * @param sample_rate_hz Requested per-channel sample rate in Hz.
+ */
+void ana_adc_set_rate(uint32_t sample_rate_hz);
+
+/**
  * @brief Single-shot read of one channel.
  *
  * @param channel Board GPIO number (e.g. PICO_DEFAULT_ADC_CHANNEL_1).
@@ -64,8 +76,9 @@ float ana_adc_read(uint8_t channel);
  * @param samples     Samples per enabled channel (capped to SIGROK_SAMPLE_LIMIT_MAX).
  * @param analog_mask Sigrok bitmask: bit 0 = ch0 (GPIO 47), bit 1 = ch1 (GPIO 46),
  *                    bit 2 = ch2 (GPIO 45).
+ * @return bool       true on success, false if a FIFO overflow was detected.
  */
-void ana_adc_capture_dma(uint32_t samples, uint8_t analog_mask);
+bool ana_adc_capture_dma(uint32_t samples, uint8_t analog_mask);
 
 /**
  * @brief Pack one raw ADC sample into a sigrok analog byte.

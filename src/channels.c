@@ -46,6 +46,8 @@ void ana_channels_init(PIO pio)
 
 	ana_module_pio_init(&channels);
 	ana_module_dma_init(&channels);
+	ana_module_pingpong_init(&channels, digital_channel_buffer_a, digital_channel_buffer_b,
+				 1024);
 
 	return;
 }

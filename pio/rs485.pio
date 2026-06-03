@@ -10,6 +10,5 @@
 
 .program capture_rs485_simple
 .wrap_target
-    in pins, 1
-    in null, 15
+    in pins, 1         ; one sample per PIO clock; autopush at 1-bit threshold
 .wrap

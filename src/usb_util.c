@@ -42,11 +42,32 @@ static volatile uint32_t tx_head = 0; /**< Written by Core 1 */
 static volatile uint32_t tx_tail = 0; /**< Read    by Core 0 */
 
 static volatile bool usb_connected = false;
+static volatile bool abort_request = false;
 
 bool ana_usb_is_connected(void)
 {
 	__dmb();
 	return usb_connected;
+}
+
+void ana_usb_request_abort(void)
+{
+	__dmb();
+	abort_request = true;
+	__dmb();
+}
+
+bool ana_usb_abort_requested(void)
+{
+	__dmb();
+	return abort_request;
+}
+
+void ana_usb_clear_abort(void)
+{
+	__dmb();
+	abort_request = false;
+	__dmb();
 }
 
 void ana_usb_set_connected(bool connected)

@@ -91,6 +91,27 @@ void ana_adc_set_clkdiv(float clkdiv)
 	adc_set_clkdiv(clkdiv);
 }
 
+void ana_adc_set_rate(uint32_t sample_rate_hz)
+{
+	if (sample_rate_hz == 0) {
+		return;
+	}
+
+	/*
+	 * The ADC samples off the 48 MHz clock, one conversion every
+	 * (clkdiv + 1) cycles.  The minimum usable divisor is 95 (→ 500 kSps),
+	 * which is the analyzer's hard analog limit (see AnalyzerDetails.md).
+	 * Without this the ADC free-runs at full speed regardless of the
+	 * requested sample rate, so analog samples land at the wrong spacing.
+	 */
+	float clkdiv = (48000000.0f / (float)sample_rate_hz) - 1.0f;
+	if (clkdiv < 95.0f) {
+		clkdiv = 95.0f;
+	}
+
+	ana_adc_set_clkdiv(clkdiv);
+}
+
 float ana_adc_read(uint8_t channel)
 {
 	adc_run(false);
@@ -98,10 +119,10 @@ float ana_adc_read(uint8_t channel)
 	return (float)(adc_read());
 }
 
-void ana_adc_capture_dma(uint32_t samples, uint8_t analog_mask)
+bool ana_adc_capture_dma(uint32_t samples, uint8_t analog_mask)
 {
 	if (samples == 0 || analog_mask == 0) {
-		return;
+		return true;
 	}
 	if (samples > ADC_BUF_SIZE) {
 		samples = ADC_BUF_SIZE;
@@ -125,13 +146,15 @@ void ana_adc_capture_dma(uint32_t samples, uint8_t analog_mask)
 		}
 	}
 	if (active_cnt == 0) {
-		return;
+		return true;
 	}
 
 	uint32_t total_xfers = samples * (uint32_t)active_cnt;
 
 	adc_fifo_drain();
-	adc_fifo_setup(true, true, 1, false, false);
+	/* err_in_fifo=true: a FIFO overrun sets bit 15 of the stored sample,
+	 * so a high-rate overflow is detectable instead of silently corrupt. */
+	adc_fifo_setup(true, true, 1, true, false);
 	adc_set_round_robin(rr_hw_mask);
 	adc_select_input(ch_order[0]);
 
@@ -150,10 +173,16 @@ void ana_adc_capture_dma(uint32_t samples, uint8_t analog_mask)
 	adc_fifo_drain();
 
 
+	bool overflow = false;
+
 	for (uint32_t s = 0; s < samples; s++) {
 		for (int c = 0; c < active_cnt; c++) {
 			uint16_t raw  = adc_dma_scratch[s * (uint32_t)active_cnt + (uint32_t)c];
 			int      hwch = ch_order[c];
+
+			if (raw & 0x8000u) {
+				overflow = true;
+			}
 
 			/* Map hw channel back to sigrok channel index */
 			for (int bit = 0; bit < ADC_NUM_CHANNELS; bit++) {
@@ -166,9 +195,15 @@ void ana_adc_capture_dma(uint32_t samples, uint8_t analog_mask)
 		}
 	}
 
+	if (overflow) {
+		log_warn(ana_adc.module.name, "ADC FIFO overflow at rate too high");
+	}
+
 	log_debug(ana_adc.module.name,
 		  "Captured %lu samples x %d ch, rr_mask=0x%02X",
 		  (unsigned long)samples, active_cnt, (unsigned)rr_hw_mask);
+
+	return !overflow;
 }
 
 struct ana_adc_module *ana_adc_get_module(void)

@@ -98,6 +98,18 @@ int main(void)
 		/* CDC → RX ring (Core 1 will consume) */
 		if (tud_cdc_available()) {
 			uint32_t count = tud_cdc_read(tmp, sizeof(tmp));
+
+			/* '+' (host stop) and '*' (reset) must abort a running capture.
+			 * Core 1 is blocked in run_capture and cannot parse them in
+			 * time, so flag the abort here; the bytes still go to the ring
+			 * so the parser resets its state afterwards. */
+			for (uint32_t i = 0; i < count; i++) {
+				if (tmp[i] == '+' || tmp[i] == '*') {
+					ana_usb_request_abort();
+					break;
+				}
+			}
+
 			ana_usb_rx_write(tmp, count);
 		}
 

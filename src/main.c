@@ -20,7 +20,7 @@
  *
  * Core 1 — Sigrok processing:
  *   usb_util rx_ring → ana_sigrok_handle_process_byte() → usb_util tx_ring
- *                                                          (via ana_usb_write)
+ *                                                          (by ana_usb_write)
  *
  */
 

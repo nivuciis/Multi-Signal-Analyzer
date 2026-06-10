@@ -29,10 +29,6 @@ int ana_capture_init(struct ana_module_system *config)
 		ana_module_pio_dma_abort(config);
 	}
 
-	/* No memset: ana_module_pio_dma_start transfers cfg->samples words into
-	 * dma_buffer and the sender reads exactly that many, so DMA overwrites
-	 * every consumed word. Zeroing here is dead work in the capture loop. */
-
 	return PICO_OK;
 }
 

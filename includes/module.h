@@ -120,7 +120,7 @@ void ana_module_pio_dma_start(struct ana_module_system *config);
  * @brief Wait for the DMA operation to complete for the PIO program
  *
  * @param config Structure referencing the module configuration
- */
+*/
 void ana_module_pio_dma_wait(struct ana_module_system *config);
 
 /**

@@ -18,6 +18,22 @@
 #include <hardware/dma.h>
 #include <hardware/pio.h>
 
+/*
+ * Chained ping-pong capture
+ * --------------------------
+ * Two DMA channels (A = instance, B = instance_b) each drain the PIO RX FIFO
+ * into their own buffer and chain to the other on completion, so the PIO never
+ * stalls and the sample stream is gap-free. A DMA_IRQ_0 handler recycles the
+ * finished channel (resets write addr + transfer count, non-triggering, so it
+ * is ready when its partner chains back) and bumps pp_produced. Core 1 reads
+ * pp_produced/pp_consumed to know which buffer is ready, and pp_overflow flags
+ * the producer lapping the consumer (USB too slow → soft overflow).
+ */
+#define ANA_PP_MAX_MODULES 2
+static struct ana_module_system *pp_modules[ANA_PP_MAX_MODULES];
+static int pp_module_count;
+static bool pp_irq_installed;
+
 void ana_module_pio_init(struct ana_module_system *config)
 {
 	log_debug(config->module.name, "Initializing PIO...");
@@ -44,7 +60,7 @@ void ana_module_pio_init(struct ana_module_system *config)
 	/* Autopush after exactly pin_count bits so the PIO needs a single
 	 * `in pins,N` per sample (1 PIO clock). A padding `in null` to reach a
 	 * fixed 16-bit threshold would cost a second clock and halve the real
-	 * sample rate (and cap it at 60 MS/s instead of 120). */
+	 * sample rate (and cap it at 60 MS/s instead of 120, for example). */
 	sm_config_set_in_shift(&sm_cfg, false, true, config->module.pin_count);
 
 	float clkdiv = clock_get_hz(clk_sys) / (float)cfg->sample_rate_hz;
@@ -133,22 +149,6 @@ void ana_module_set_sample_rate(struct ana_module_system *config)
 	pio_sm_set_clkdiv(config->pio.instance, config->pio.sm, clkdiv);
 }
 
-/*
- * Chained ping-pong capture
- * --------------------------
- * Two DMA channels (A = instance, B = instance_b) each drain the PIO RX FIFO
- * into their own buffer and chain to the other on completion, so the PIO never
- * stalls and the sample stream is gap-free. A DMA_IRQ_0 handler recycles the
- * finished channel (resets write addr + transfer count, non-triggering, so it
- * is ready when its partner chains back) and bumps pp_produced. Core 1 reads
- * pp_produced/pp_consumed to know which buffer is ready, and pp_overflow flags
- * the producer lapping the consumer (USB too slow → soft overflow).
- */
-#define ANA_PP_MAX_MODULES 2
-static struct ana_module_system *pp_modules[ANA_PP_MAX_MODULES];
-static int pp_module_count;
-static bool pp_irq_installed;
-
 static void ana_module_pp_irq(void)
 {
 	for (int i = 0; i < pp_module_count; i++) {
@@ -213,7 +213,6 @@ void ana_module_pingpong_start(struct ana_module_system *config)
 	config->dma.pp_consumed = 0;
 	config->dma.pp_overflow = false;
 
-	/* Reconfigure each start: the PIO SM/DREQ can change across a reload. */
 	ana_module_pp_configure(config, config->dma.instance, config->dma.instance_b,
 				config->dma.buf_a);
 	ana_module_pp_configure(config, config->dma.instance_b, config->dma.instance,

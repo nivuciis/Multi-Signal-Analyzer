@@ -153,7 +153,8 @@ bool ana_adc_capture_dma(uint32_t samples, uint8_t analog_mask)
 
 	adc_fifo_drain();
 	/* err_in_fifo=true: a FIFO overrun sets bit 15 of the stored sample,
-	 * so a high-rate overflow is detectable instead of silently corrupt. */
+	 * so a high-rate overflow is detectable instead of silently corrupt.
+	 * Limited to 150KHz with 3 analog channels */
 	adc_fifo_setup(true, true, 1, true, false);
 	adc_set_round_robin(rr_hw_mask);
 	adc_select_input(ch_order[0]);

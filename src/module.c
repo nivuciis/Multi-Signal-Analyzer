@@ -9,9 +9,9 @@
  * @copyright Copyright (c) 2026
  *
  *******************************************************************/
+#include "handles/sigrok_handler.h"
 #include "log.h"
 #include "module.h"
-#include "handles/sigrok_handler.h"
 
 #include <stdint.h>
 
@@ -95,12 +95,6 @@ void ana_module_pio_dma_start(struct ana_module_system *config)
 {
 	struct pulseview_sample_config *cfg = ana_sigrok_get_sample_config();
 
-	if (config->dma.callback) {
-		irq_set_exclusive_handler(DMA_IRQ_0, config->dma.callback);
-		irq_set_enabled(DMA_IRQ_0, true);
-		dma_channel_set_irq0_enabled(config->dma.instance, true);
-	}
-
 	config->dma.has_complete = false;
 
 	pio_sm_set_enabled(config->pio.instance, config->pio.sm, false);
@@ -132,12 +126,6 @@ void ana_module_pio_dma_abort(struct ana_module_system *config)
 {
 	pio_sm_set_enabled(config->pio.instance, config->pio.sm, false);
 	dma_channel_abort(config->dma.instance);
-
-	if (config->dma.callback) {
-		dma_channel_set_irq0_enabled(config->dma.instance, false);
-		irq_set_enabled(DMA_IRQ_0, false);
-		irq_remove_handler(DMA_IRQ_0, config->dma.callback);
-	}
 
 	config->dma.has_complete = true;
 }
@@ -179,20 +167,23 @@ static void ana_module_pp_irq(void)
 void ana_module_pingpong_init(struct ana_module_system *config, uint16_t *buf_a, uint16_t *buf_b,
 			      uint32_t chunk)
 {
-	config->dma.buf_a    = buf_a;
-	config->dma.buf_b    = buf_b;
+	config->dma.buf_a = buf_a;
+	config->dma.buf_b = buf_b;
 	config->dma.pp_chunk = chunk;
-	config->dma.instance_b = (uint8_t)dma_claim_unused_channel(true);
 
-	if (pp_module_count < ANA_PP_MAX_MODULES) {
-		pp_modules[pp_module_count++] = config;
-	} else {
+	if (pp_module_count >= ANA_PP_MAX_MODULES) {
 		log_err(config->module.name, "Too many ping-pong modules");
+		return;
 	}
+
+	config->dma.instance_b = (uint8_t)dma_claim_unused_channel(true);
+	
+	pp_modules[pp_module_count] = config;
+	pp_module_count++;
 }
 
-static void ana_module_pp_configure(struct ana_module_system *config, uint8_t chan, uint8_t chain_to,
-				    uint16_t *buf)
+static void ana_module_pp_configure(struct ana_module_system *config, uint8_t chan,
+				    uint8_t chain_to, uint16_t *buf)
 {
 	dma_channel_config c = dma_channel_get_default_config(chan);
 	channel_config_set_read_increment(&c, false);

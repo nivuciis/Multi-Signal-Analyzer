@@ -49,7 +49,6 @@ struct ana_module_dma {
 	uint16_t *dma_buffer;            /**< DMA buffer pointer */
 	uint8_t instance;                /**< DMA channel number */
 	volatile bool has_complete;      /**< DMA completion flag */
-	void (*callback)(void);          /**< DMA callback function */
 	dma_channel_config instance_cfg; /**< DMA channel configuration */
 
 	/* Chained ping-pong state (gap-free continuous digital capture).

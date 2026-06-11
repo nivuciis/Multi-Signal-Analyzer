@@ -188,17 +188,20 @@ static bool ana_send_packet_channels(const uint16_t *dig_buf, const uint16_t *rs
 			}
 
 			if (self.tx.bytes_per_dig_sample >= 1) {
-				self.tx.buf[tx.idx++] = (uint8_t)(0x80u | (sample & 0x7Fu));
+				self.tx.buf[tx.idx] = (uint8_t)(0x80u | (sample & 0x7Fu));
+				tx.idx++;
 			}
 
 			if (self.tx.bytes_per_dig_sample >= 2) {
-				self.tx.buf[tx.idx++] = (uint8_t)(0x80u | ((sample >> 7) & 0x7Fu));
+				self.tx.buf[tx.idx] = (uint8_t)(0x80u | ((sample >> 7) & 0x7Fu));
+				tx.idx++;
 			}
 
 			for (uint8_t ch = 0; ch < active_analog_count; ch++) {
 
-				self.tx.buf[tx.idx++] =
+				self.tx.buf[tx.idx] =
 					ana_adc_sigrok_byte(active_analog_channels[ch], i, adc);
+				tx.idx++;
 			}
 		}
 
@@ -220,6 +223,11 @@ static bool ana_send_packet_channels(const uint16_t *dig_buf, const uint16_t *rs
 	 *   - coarse: 0x50-0x7F → repeats = (byte-78)*32 (64,96,..,1568)
 	 *   - data:   0x80-0xFF → sample bytes (never RLE)
 	 */
+	if (self.tx.bytes_per_dig_sample == 0) {
+		*bytes_out = 0;
+		return true;
+	}
+
 	while (i < chunk_samples) {
 
 		cur = (uint16_t)(merge_digital_sample(dig_buf[i], rs485_buf[i]) &
@@ -237,11 +245,13 @@ static bool ana_send_packet_channels(const uint16_t *dig_buf, const uint16_t *rs
 		}
 
 		if (self.tx.bytes_per_dig_sample >= 1) {
-			self.tx.buf[tx.idx++] = (uint8_t)(0x80u | (cur & 0x7Fu));
+			self.tx.buf[tx.idx] = (uint8_t)(0x80u | (cur & 0x7Fu));
+			tx.idx++;
 		}
 
 		if (self.tx.bytes_per_dig_sample >= 2) {
-			self.tx.buf[tx.idx++] = (uint8_t)(0x80u | ((cur >> 7) & 0x7Fu));
+			self.tx.buf[tx.idx] = (uint8_t)(0x80u | ((cur >> 7) & 0x7Fu));
+			tx.idx++;
 		}
 
 		repeats = run - 1u;
@@ -250,12 +260,14 @@ static bool ana_send_packet_channels(const uint16_t *dig_buf, const uint16_t *rs
 			if (mult > 49u) {
 				mult = 49u;
 			}
-			self.tx.buf[tx.idx++] = (uint8_t)(78u + mult);
+			self.tx.buf[tx.idx] = (uint8_t)(78u + mult);
+			tx.idx++;
 			repeats -= mult * 32u;
 		}
 		while (repeats > 0u) {
 			rep = (repeats > 32u) ? 32u : repeats;
-			self.tx.buf[tx.idx++] = (uint8_t)(47u + rep);
+			self.tx.buf[tx.idx] = (uint8_t)(47u + rep);
+			tx.idx++;
 			repeats -= rep;
 		}
 
@@ -357,15 +369,16 @@ static bool capture_chunks(struct ana_module_system *config, uint32_t n_samples,
 
 static bool capture_continuous_digital(uint32_t n_samples, uint32_t *total_sent)
 {
+	uint32_t need = (n_samples + CAPTURE_CHUNK_SIZE - 1u) / CAPTURE_CHUNK_SIZE;
+	uint32_t consumed = 0;
+	uint32_t bytes = 0;
+	bool ok = true;
+
 	struct ana_module_system *ch = ana_channels_get_module();
 	struct ana_module_system *rs = ana_rs485_get_module();
 
 	ana_module_pingpong_start(ch);
 	ana_module_pingpong_start(rs);
-
-	uint32_t need = (n_samples + CAPTURE_CHUNK_SIZE - 1u) / CAPTURE_CHUNK_SIZE;
-	uint32_t consumed = 0;
-	bool ok = true;
 
 	while (consumed < need) {
 		/* Wait until both rings have completed the buffer at index `consumed` */
@@ -383,16 +396,16 @@ static bool capture_continuous_digital(uint32_t n_samples, uint32_t *total_sent)
 		uint32_t remain = n_samples - consumed * CAPTURE_CHUNK_SIZE;
 		uint32_t samples = (remain < CAPTURE_CHUNK_SIZE) ? remain : CAPTURE_CHUNK_SIZE;
 
-		consumed++;
-		ch->dma.pp_consumed = consumed;
-		rs->dma.pp_consumed = consumed;
-
-		uint32_t bytes = 0;
 		if (!ana_send_packet_channels(dbuf, rbuf, samples, &bytes)) {
 			ok = false;
 			goto stop;
 		}
+
 		*total_sent += bytes;
+
+		consumed++;
+		ch->dma.pp_consumed = consumed;
+		rs->dma.pp_consumed = consumed;
 
 		if (ch->dma.pp_overflow || rs->dma.pp_overflow) {
 			ok = false;

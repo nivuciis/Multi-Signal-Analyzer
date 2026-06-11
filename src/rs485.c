@@ -27,7 +27,7 @@ struct ana_module_system rs485 = {
 		.name      = MODULE_NAME,
 		.pin_base  = PICO_DEFAULT_RS485_PIN_BASE,
 		.pin_count = PICO_DEFAULT_RS485_PIN_COUNT,
-		.mask      = 0x0002,
+		.mask      = 0x0001,
 	},
 	.pio = {0},
 	.dma = {0},

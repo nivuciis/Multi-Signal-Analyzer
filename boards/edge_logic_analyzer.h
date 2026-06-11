@@ -43,7 +43,7 @@ pico_board_cmake_set(PICO_PLATFORM, rp2350)
  */
 #ifndef PICO_DEFAULT_UART
 #define PICO_DEFAULT_UART 0
-#endif  
+#endif
 #ifndef PICO_DEFAULT_UART_TX_PIN
 #define PICO_DEFAULT_UART_TX_PIN 0
 #endif

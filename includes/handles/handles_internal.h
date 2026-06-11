@@ -93,8 +93,7 @@ struct sigrok_handler {
 	uint32_t sample_rate;        /**< Sample rate in Hz */
 	uint32_t num_samples;        /**< Number of samples to capture */
 	uint32_t pretrigger_samples; /**< Number of samples to capture before the trigger event */
-	uint16_t digital_mask;       /**< Bitmask of enabled digital cha
-	nnels */
+	uint16_t digital_mask;       /**< Bitmask of enabled digital channels */
 	uint8_t analog_mask;         /**< Bitmask of enabled analog channels */
 	uint8_t analog_channel;      /**< Currently selected analog channel for single-shot reads */
 	uint16_t digital_channel; /**< Currently selected digital channel for single-shot reads */

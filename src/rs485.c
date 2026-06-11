@@ -19,8 +19,10 @@
 
 #define MODULE_NAME "RS485"
 
-static uint16_t rs485_buffer_a[1024];
-static uint16_t rs485_buffer_b[1024];
+/* 2048-byte alignment required by the ping-pong DMA write-address ring
+ * (see ana_module_pp_configure). */
+static uint16_t rs485_buffer_a[1024] __attribute__((aligned(2048)));
+static uint16_t rs485_buffer_b[1024] __attribute__((aligned(2048)));
 
 struct ana_module_system rs485 = {
 	.module = {

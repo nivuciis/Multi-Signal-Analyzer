@@ -92,6 +92,10 @@ void ana_usb_rx_write(const uint8_t *data, uint32_t len)
 				return;
 			}
 			tud_task();
+			/* Core 1 may be blocked in ana_usb_write() waiting for TX
+			 * space; keep draining here or both cores deadlock when the
+			 * host floods RX while a capture is streaming. */
+			ana_usb_tx_drain();
 			tight_loop_contents();
 		}
 

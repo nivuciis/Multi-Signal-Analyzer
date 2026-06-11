@@ -29,7 +29,6 @@
 #define CAPTURE_CHUNK_SIZE 1024U
 
 static struct sigrok_handler self = {
-	.sample_rate = 5000,
 	.num_samples = 1024,
 	.digital_mask = DIGITAL_MASK_DEFAULT,
 	.analog_mask = ANALOG_MASK_DEFAULT,
@@ -49,7 +48,8 @@ static struct sigrok_handler self = {
 	.trigger_config =
 		{
 			.trigger_mask = 0x0000,
-			.trigger_type = {-1},
+			/* trigger_type entries default to 0 (ANA_TRIGGER_EDGE_RISE);
+			 * they are only read for channels set in trigger_mask. */
 		},
 };
 
@@ -175,10 +175,10 @@ static bool ana_send_packet_channels(const uint16_t *dig_buf, const uint16_t *rs
 
 	if (active_analog_count > 0) {
 
-		for (uint32_t i = 0; i < chunk_samples; i++) {
+		for (uint32_t s = 0; s < chunk_samples; s++) {
 
 			uint16_t sample =
-				(uint16_t)(merge_digital_sample(dig_buf[i], rs485_buf[i]) &
+				(uint16_t)(merge_digital_sample(dig_buf[s], rs485_buf[s]) &
 					   self.digital_mask);
 
 			uint32_t needed = self.tx.bytes_per_dig_sample + active_analog_count;
@@ -200,7 +200,7 @@ static bool ana_send_packet_channels(const uint16_t *dig_buf, const uint16_t *rs
 			for (uint8_t ch = 0; ch < active_analog_count; ch++) {
 
 				self.tx.buf[tx.idx] =
-					ana_adc_sigrok_byte(active_analog_channels[ch], i, adc);
+					ana_adc_sigrok_byte(active_analog_channels[ch], s, adc);
 				tx.idx++;
 			}
 		}
@@ -312,12 +312,19 @@ static bool capture_chunks(struct ana_module_system *config, uint32_t n_samples,
 		ana_capture_data_start(config);
 		ana_capture_data_start(rs485_mod);
 
+		/* Start the ADC together with the digital DMA so the analog
+		 * window opens at the same instant as the digital one. */
+		if (self.tx.active_analog_ch > 0) {
+			ana_adc_capture_start(chunk, self.analog_mask);
+		}
+
 		if (tx_buf != NULL) {
 			uint32_t chunk_bytes = 0;
 			if (!ana_send_packet_channels(tx_buf, tx_rs485_buf, tx_samples,
 						      &chunk_bytes)) {
 				ana_module_pio_dma_abort(config);
 				ana_module_pio_dma_abort(rs485_mod);
+				ana_adc_capture_abort();
 				config->dma.dma_buffer = buf[0];
 				rs485_mod->dma.dma_buffer = buf_rs485[0];
 				return false;
@@ -327,19 +334,21 @@ static bool capture_chunks(struct ana_module_system *config, uint32_t n_samples,
 
 		if (!ana_capture_data_wait(config)) {
 			ana_module_pio_dma_abort(rs485_mod);
+			ana_adc_capture_abort();
 			config->dma.dma_buffer = buf[0];
 			rs485_mod->dma.dma_buffer = buf_rs485[0];
 			return false;
 		}
 
 		if (!ana_capture_data_wait(rs485_mod)) {
+			ana_adc_capture_abort();
 			config->dma.dma_buffer = buf[0];
 			rs485_mod->dma.dma_buffer = buf_rs485[0];
 			return false;
 		}
 
 		if (self.tx.active_analog_ch > 0) {
-			if (!ana_adc_capture_dma(chunk, self.analog_mask)) {
+			if (!ana_adc_capture_finish()) {
 				adc_overflow = true;
 				break;
 			}
@@ -426,10 +435,8 @@ void run_capture(bool continuous)
 	tx_init();
 
 	if (self.tx.active_analog_ch > 0) {
-		ana_adc_set_rate(self.cfg.sample_rate_hz);
+		ana_adc_set_rate(self.cfg.sample_rate_hz * (uint32_t)self.tx.active_analog_ch);
 	}
-
-	ana_usb_clear_abort();
 
 	ana_led_set_status(LED_STATUS_CAPTURING);
 
@@ -443,7 +450,8 @@ void run_capture(bool continuous)
 					      : 0;
 		uint32_t post_samples = self.num_samples - pretrigger;
 
-		if (self.tx.active_analog_ch == 0 && pretrigger == 0) {
+		if (self.tx.active_analog_ch == 0 && pretrigger == 0 &&
+		    self.trigger_config.trigger_mask == 0) {
 			ana_channels_apply_trigger();
 			ana_module_set_sample_rate(config);
 			ana_module_set_sample_rate(ana_rs485_get_module());
@@ -563,27 +571,40 @@ void ana_sigrok_handle_process_byte(uint8_t received_command)
 	memset(self.response, 0, sizeof(self.response));
 	self.response[0] = '\0';
 
+	/* '+'/'*' set the abort flag on Core 0 the moment they arrive (see
+	 * main.c). Clear it here, when the byte that raised it is consumed, so
+	 * a stop arriving right after a capture command is never discarded. */
 	if (received_command == '*') {
+		ana_usb_clear_abort();
 		ana_sigrok_handle_init();
 		ana_led_set_status(LED_STATUS_OFF);
 		return;
 	}
 
 	if (received_command == '+') {
+		ana_usb_clear_abort();
 		self.cmd_str_index = 0;
 		self.last_was_cr = false;
 		return;
 	}
 
 	if (received_command == '\r' || received_command == '\n') {
+		bool matched = false;
+
 		self.cmd_str[self.cmd_str_index] = '\0';
 		strcpy((char *)self.response, "*");
 
 		for (size_t i = 0; i < SIGROK_COMMAND_COUNT; i++) {
 			if (self.cmd_str[0] == sigrok_commands[i].command) {
 				sigrok_commands[i].handler();
+				matched = true;
 				break;
 			}
+		}
+
+		/* Unknown command: no success ACK. */
+		if (!matched) {
+			self.response[0] = '\0';
 		}
 
 		if (self.response[0] != '\0') {

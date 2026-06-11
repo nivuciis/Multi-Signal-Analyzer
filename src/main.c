@@ -43,9 +43,18 @@
 
 static bool ana_sync_led_with_usb_connection(struct repeating_timer *rt)
 {
+	static bool last_connected = false;
 	bool connected = tud_cdc_connected();
+
 	ana_usb_set_connected(connected);
-	ana_led_set_status(connected ? LED_STATUS_CONNECTED : LED_STATUS_OFF);
+
+	if (connected != last_connected) {
+		last_connected = connected;
+		if (!connected || ana_led_get_status() != LED_STATUS_CAPTURING) {
+			ana_led_set_status(connected ? LED_STATUS_CONNECTED
+						     : LED_STATUS_OFF);
+		}
+	}
 	return true;
 }
 

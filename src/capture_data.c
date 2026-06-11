@@ -43,16 +43,6 @@ int ana_capture_data_get_analog_channels_count(uint8_t analog_mask)
 	return enabled_analog_channel_count;
 }
 
-static int ana_get_first_analog_channel(uint8_t analog_mask)
-{
-	for (int i = 0; i < ANALOG_CHANNEL_SIZE; i++) {
-		if (analog_mask & (1 << i)) {
-			return i;
-		}
-	}
-	return 0;
-}
-
 void ana_capture_data_start(struct ana_module_system *config)
 {
 	ana_led_set_status(LED_STATUS_CAPTURING);

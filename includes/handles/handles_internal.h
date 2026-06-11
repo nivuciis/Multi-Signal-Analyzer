@@ -90,7 +90,6 @@ struct sigrok_handler {
 		uint32_t bytes_per_sample;     /**< Total bytes per sample (digital + analog) */
 		uint8_t buf[TX_BUF_SIZE]; /**< Buffer for building responses and capture data */
 	} tx;
-	uint32_t sample_rate;        /**< Sample rate in Hz */
 	uint32_t num_samples;        /**< Number of samples to capture */
 	uint32_t pretrigger_samples; /**< Number of samples to capture before the trigger event */
 	uint16_t digital_mask;       /**< Bitmask of enabled digital channels */

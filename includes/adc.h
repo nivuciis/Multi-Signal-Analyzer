@@ -23,8 +23,8 @@
 /**
  * @brief Raw 12-bit ADC buffers, one per sigrok analog channel (index 0–2).
  *
- * Sized to SIGROK_SAMPLE_LIMIT_MAX so they always match the digital buffers.
- * Indexed as: raw[sigrok_ch][sample_index].
+ * Sized to ADC_BUF_SIZE (1024) — one capture chunk, matching the digital
+ * chunk size. Indexed as: raw[sigrok_ch][sample_index].
  */
 #define ADC_NUM_CHANNELS 3
 
@@ -68,17 +68,33 @@ void ana_adc_set_rate(uint32_t sample_rate_hz);
 float ana_adc_read(uint8_t channel);
 
 /**
- * @brief DMA round-robin capture for all enabled channels.
+ * @brief Arm and start a DMA round-robin capture for all enabled channels.
  *
- * Fills raw[ch][0..samples-1] with 12-bit values.
- * Blocks until DMA completes.
+ * Non-blocking: configures the FIFO/round-robin, arms the DMA and starts the
+ * ADC, then returns. Call alongside the digital capture start so the analog
+ * window opens at the same instant as the digital one.
  *
- * @param samples     Samples per enabled channel (capped to SIGROK_SAMPLE_LIMIT_MAX).
+ * @param samples     Samples per enabled channel (capped to ADC_BUF_SIZE).
  * @param analog_mask Sigrok bitmask: bit 0 = ch0 (GPIO 47), bit 1 = ch1 (GPIO 46),
  *                    bit 2 = ch2 (GPIO 45).
- * @return bool       true on success, false if a FIFO overflow was detected.
+ * @return bool       true if the capture was started (or nothing to do).
  */
-bool ana_adc_capture_dma(uint32_t samples, uint8_t analog_mask);
+bool ana_adc_capture_start(uint32_t samples, uint8_t analog_mask);
+
+/**
+ * @brief Wait for the capture started by ana_adc_capture_start() and demux it.
+ *
+ * Blocks until the DMA completes, then fills raw[ch][0..samples-1] with
+ * 12-bit values. No-op if no capture is in flight.
+ *
+ * @return bool true on success, false if a FIFO overflow was detected.
+ */
+bool ana_adc_capture_finish(void);
+
+/**
+ * @brief Abort an in-flight ADC capture (stop ADC, abort DMA, drain FIFO).
+ */
+void ana_adc_capture_abort(void);
 
 /**
  * @brief Pack one raw ADC sample into a sigrok analog byte.

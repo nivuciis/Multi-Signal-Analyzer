@@ -137,6 +137,10 @@ void ana_module_set_sample_rate(struct ana_module_system *config)
 	pio_sm_set_clkdiv(config->pio.instance, config->pio.sm, clkdiv);
 }
 
+/* The channels recycle themselves in hardware: the write-address ring wraps
+ * back to the buffer base and TRANS_COUNT reloads on every chain trigger, so
+ * this handler only has to account for produced buffers. Reprogramming the
+ * channel here would race the partner's chain re-trigger at high rates. */
 static void ana_module_pp_irq(void)
 {
 	for (int i = 0; i < pp_module_count; i++) {
@@ -144,8 +148,6 @@ static void ana_module_pp_irq(void)
 
 		if (dma_channel_get_irq0_status(m->dma.instance)) {
 			dma_channel_acknowledge_irq0(m->dma.instance);
-			dma_channel_set_write_addr(m->dma.instance, m->dma.buf_a, false);
-			dma_channel_set_trans_count(m->dma.instance, m->dma.pp_chunk, false);
 			m->dma.pp_produced++;
 			if (m->dma.pp_produced - m->dma.pp_consumed >= 2u) {
 				m->dma.pp_overflow = true;
@@ -154,8 +156,6 @@ static void ana_module_pp_irq(void)
 
 		if (dma_channel_get_irq0_status(m->dma.instance_b)) {
 			dma_channel_acknowledge_irq0(m->dma.instance_b);
-			dma_channel_set_write_addr(m->dma.instance_b, m->dma.buf_b, false);
-			dma_channel_set_trans_count(m->dma.instance_b, m->dma.pp_chunk, false);
 			m->dma.pp_produced++;
 			if (m->dma.pp_produced - m->dma.pp_consumed >= 2u) {
 				m->dma.pp_overflow = true;
@@ -191,6 +191,12 @@ static void ana_module_pp_configure(struct ana_module_system *config, uint8_t ch
 	channel_config_set_transfer_data_size(&c, DMA_SIZE_16);
 	channel_config_set_dreq(&c, pio_get_dreq(config->pio.instance, config->pio.sm, false));
 	channel_config_set_chain_to(&c, chain_to);
+	/* Hardware write-address ring: the address can never leave the buffer,
+	 * even if the partner's chain re-triggers this channel before the IRQ
+	 * handler runs. Requires pp_chunk * sizeof(uint16_t) to be a power of
+	 * two and the buffers aligned to that size. */
+	channel_config_set_ring(&c, true,
+				(uint)__builtin_ctz(config->dma.pp_chunk * sizeof(uint16_t)));
 
 	dma_channel_configure(chan, &c, buf, &config->pio.instance->rxf[config->pio.sm],
 			      config->dma.pp_chunk, false);

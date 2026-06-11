@@ -48,8 +48,6 @@ static const uint8_t SIGROK_CH_TO_GPIO[ADC_NUM_CHANNELS] = {
 	PICO_DEFAULT_ADC_CHANNEL_3, /* sigrok ch 2 */
 };
 
-#define ADC_MV_PER_LSB  (3300.0f / 4096.0f)  /* 12-bit ADC, 0–3300mV range */
-
 #define ADC_BUF_SIZE 1024
 
 static uint16_t adc_buf_raw[ADC_NUM_CHANNELS][ADC_BUF_SIZE];
@@ -119,8 +117,19 @@ float ana_adc_read(uint8_t channel)
 	return (float)(adc_read());
 }
 
-bool ana_adc_capture_dma(uint32_t samples, uint8_t analog_mask)
+/* In-flight capture state shared between start/finish/abort. */
+static struct {
+	uint32_t samples;
+	uint8_t  analog_mask;
+	int      ch_order[ADC_NUM_CHANNELS];
+	int      active_cnt;
+	bool     running;
+} adc_capture;
+
+bool ana_adc_capture_start(uint32_t samples, uint8_t analog_mask)
 {
+	adc_capture.running = false;
+
 	if (samples == 0 || analog_mask == 0) {
 		return true;
 	}
@@ -128,10 +137,9 @@ bool ana_adc_capture_dma(uint32_t samples, uint8_t analog_mask)
 		samples = ADC_BUF_SIZE;
 	}
 
-
 	uint32_t rr_hw_mask = 0;
-	int      ch_order[ADC_NUM_CHANNELS];
-	int      active_cnt = 0;
+
+	adc_capture.active_cnt = 0;
 
 	for (int bit = 0; bit < ADC_NUM_CHANNELS; bit++) {
 		if (analog_mask & (1u << bit)) {
@@ -141,15 +149,18 @@ bool ana_adc_capture_dma(uint32_t samples, uint8_t analog_mask)
 
 	for (int hw = 0; hw <= 7; hw++) {
 		if (rr_hw_mask & (1u << hw)) {
-			ch_order[active_cnt] = hw;
-			active_cnt++;
+			adc_capture.ch_order[adc_capture.active_cnt] = hw;
+			adc_capture.active_cnt++;
 		}
 	}
-	if (active_cnt == 0) {
+	if (adc_capture.active_cnt == 0) {
 		return true;
 	}
 
-	uint32_t total_xfers = samples * (uint32_t)active_cnt;
+	adc_capture.samples = samples;
+	adc_capture.analog_mask = analog_mask;
+
+	uint32_t total_xfers = samples * (uint32_t)adc_capture.active_cnt;
 
 	adc_fifo_drain();
 	/* err_in_fifo=true: a FIFO overrun sets bit 15 of the stored sample,
@@ -157,7 +168,7 @@ bool ana_adc_capture_dma(uint32_t samples, uint8_t analog_mask)
 	 * Limited to 150KHz with 3 analog channels */
 	adc_fifo_setup(true, true, 1, true, false);
 	adc_set_round_robin(rr_hw_mask);
-	adc_select_input(ch_order[0]);
+	adc_select_input(adc_capture.ch_order[0]);
 
 	dma_channel_config cfg = dma_channel_get_default_config(ana_adc.dma_chan);
 	channel_config_set_read_increment(&cfg,  false);
@@ -169,17 +180,29 @@ bool ana_adc_capture_dma(uint32_t samples, uint8_t analog_mask)
 			      adc_dma_scratch, &adc_hw->fifo, total_xfers, true);
 
 	adc_run(true);
+	adc_capture.running = true;
+
+	return true;
+}
+
+bool ana_adc_capture_finish(void)
+{
+	if (!adc_capture.running) {
+		return true;
+	}
+	adc_capture.running = false;
+
 	dma_channel_wait_for_finish_blocking(ana_adc.dma_chan);
 	adc_run(false);
 	adc_fifo_drain();
 
-
 	bool overflow = false;
 
-	for (uint32_t s = 0; s < samples; s++) {
-		for (int c = 0; c < active_cnt; c++) {
-			uint16_t raw  = adc_dma_scratch[s * (uint32_t)active_cnt + (uint32_t)c];
-			int      hwch = ch_order[c];
+	for (uint32_t s = 0; s < adc_capture.samples; s++) {
+		for (int c = 0; c < adc_capture.active_cnt; c++) {
+			uint16_t raw  = adc_dma_scratch[s * (uint32_t)adc_capture.active_cnt +
+							(uint32_t)c];
+			int      hwch = adc_capture.ch_order[c];
 
 			if (raw & 0x8000u) {
 				overflow = true;
@@ -187,7 +210,7 @@ bool ana_adc_capture_dma(uint32_t samples, uint8_t analog_mask)
 
 			/* Map hw channel back to sigrok channel index */
 			for (int bit = 0; bit < ADC_NUM_CHANNELS; bit++) {
-				if ((analog_mask & (1u << bit)) &&
+				if ((adc_capture.analog_mask & (1u << bit)) &&
 				    ADC_GPIO_TO_HW_CH(SIGROK_CH_TO_GPIO[bit]) == hwch) {
 					ana_adc.raw[bit][s] = raw & 0x0FFFu;
 					break;
@@ -201,10 +224,22 @@ bool ana_adc_capture_dma(uint32_t samples, uint8_t analog_mask)
 	}
 
 	log_debug(ana_adc.module.name,
-		  "Captured %lu samples x %d ch, rr_mask=0x%02X",
-		  (unsigned long)samples, active_cnt, (unsigned)rr_hw_mask);
+		  "Captured %lu samples x %d ch",
+		  (unsigned long)adc_capture.samples, adc_capture.active_cnt);
 
 	return !overflow;
+}
+
+void ana_adc_capture_abort(void)
+{
+	if (!adc_capture.running) {
+		return;
+	}
+	adc_capture.running = false;
+
+	adc_run(false);
+	dma_channel_abort(ana_adc.dma_chan);
+	adc_fifo_drain();
 }
 
 struct ana_adc_module *ana_adc_get_module(void)

@@ -137,6 +137,17 @@ void ana_module_set_sample_rate(struct ana_module_system *config)
 	pio_sm_set_clkdiv(config->pio.instance, config->pio.sm, clkdiv);
 }
 
+inline static void ana_module_verify_pp_irq(struct ana_module_dma *dma, uint8_t instance)
+{
+	if (!dma_channel_get_irq0_status(instance)) {
+		dma_channel_acknowledge_irq0(instance);
+		dma->pp_produced++;
+		if (dma->pp_produced - dma->pp_consumed >= 2u) {
+			dma->pp_overflow = true;
+		}
+	}
+}
+
 /* The channels recycle themselves in hardware: the write-address ring wraps
  * back to the buffer base and TRANS_COUNT reloads on every chain trigger, so
  * this handler only has to account for produced buffers. Reprogramming the
@@ -146,21 +157,8 @@ static void ana_module_pp_irq(void)
 	for (int i = 0; i < pp_module_count; i++) {
 		struct ana_module_system *m = pp_modules[i];
 
-		if (dma_channel_get_irq0_status(m->dma.instance)) {
-			dma_channel_acknowledge_irq0(m->dma.instance);
-			m->dma.pp_produced++;
-			if (m->dma.pp_produced - m->dma.pp_consumed >= 2u) {
-				m->dma.pp_overflow = true;
-			}
-		}
-
-		if (dma_channel_get_irq0_status(m->dma.instance_b)) {
-			dma_channel_acknowledge_irq0(m->dma.instance_b);
-			m->dma.pp_produced++;
-			if (m->dma.pp_produced - m->dma.pp_consumed >= 2u) {
-				m->dma.pp_overflow = true;
-			}
-		}
+		ana_module_verify_pp_irq(&m->dma, m->dma.instance);
+		ana_module_verify_pp_irq(&m->dma, m->dma.instance_b);
 	}
 }
 
@@ -177,7 +175,7 @@ void ana_module_pingpong_init(struct ana_module_system *config, uint16_t *buf_a,
 	}
 
 	config->dma.instance_b = (uint8_t)dma_claim_unused_channel(true);
-	
+
 	pp_modules[pp_module_count] = config;
 	pp_module_count++;
 }

@@ -42,13 +42,16 @@
  */
 #define ADC_GPIO_TO_HW_CH(gpio) ((gpio) - 40u)
 
+#define ADC_BUF_SIZE 1024
+
+#define ADC_MIN_CLKDIV 95.0f
+
 static const uint8_t SIGROK_CH_TO_GPIO[ADC_NUM_CHANNELS] = {
 	PICO_DEFAULT_ADC_CHANNEL_1, /* sigrok ch 0 */
 	PICO_DEFAULT_ADC_CHANNEL_2, /* sigrok ch 1 */
 	PICO_DEFAULT_ADC_CHANNEL_3, /* sigrok ch 2 */
 };
 
-#define ADC_BUF_SIZE 1024
 
 static uint16_t adc_buf_raw[ADC_NUM_CHANNELS][ADC_BUF_SIZE];
 
@@ -103,8 +106,8 @@ void ana_adc_set_rate(uint32_t sample_rate_hz)
 	 * requested sample rate, so analog samples land at the wrong spacing.
 	 */
 	float clkdiv = (48000000.0f / (float)sample_rate_hz) - 1.0f;
-	if (clkdiv < 95.0f) {
-		clkdiv = 95.0f;
+	if (clkdiv < ADC_MIN_CLKDIV) {
+		clkdiv = ADC_MIN_CLKDIV;
 	}
 
 	ana_adc_set_clkdiv(clkdiv);

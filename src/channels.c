@@ -19,8 +19,10 @@
 
 #define MODULE_NAME "Channels"
 
-static uint16_t digital_channel_buffer_a[1024];
-static uint16_t digital_channel_buffer_b[1024];
+/* 2048-byte alignment required by the ping-pong DMA write-address ring
+ * (see ana_module_pp_configure). */
+static uint16_t digital_channel_buffer_a[1024] __attribute__((aligned(2048)));
+static uint16_t digital_channel_buffer_b[1024] __attribute__((aligned(2048)));
 
 struct ana_module_system channels = {
 	.module =
@@ -28,7 +30,7 @@ struct ana_module_system channels = {
 			.name = MODULE_NAME,
 			.pin_base = PICO_DEFAULT_CHANNELS_PIN_BASE,
 			.pin_count = PICO_DEFAULT_CHANNELS_PIN_COUNT,
-			.mask = 0xFFF0, /**< Default mask to select the first 12 bits/channels */
+			.mask = 0x0FFF, /**< Channels 0-11 (bits 0-11) */
 		},
 	.pio = {0},
 	.dma = {0},
@@ -46,6 +48,8 @@ void ana_channels_init(PIO pio)
 
 	ana_module_pio_init(&channels);
 	ana_module_dma_init(&channels);
+	ana_module_pingpong_init(&channels, digital_channel_buffer_a, digital_channel_buffer_b,
+				 1024);
 
 	return;
 }

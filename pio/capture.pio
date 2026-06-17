@@ -7,15 +7,14 @@
  *
  * @author   Vinicius Rafael Marques de Carvalho <vinicius.carvalho@edge.ufal.br>
  * @author   João Matheus Nascimento Dias <joao.dias@edge.ufal.br>
- * @version   0.4
- * @date      25/03/2026
+ * @version   0.5
+ * @date      02/06/2026
  * @copyright Copyright (c) 2026
  *  ------------------------------------------------------------*/
 
 .program capture_prog_simple
 .wrap_target
-    in pins, 12
-    in null, 4
+    in pins, 12        ; one sample per PIO clock; autopush at 12-bit threshold
 .wrap
 
 .program capture_prog_trigger_rise
@@ -28,8 +27,7 @@ WAIT_LOW:
     jmp      WAIT_HIGH       ; now low → wait for next rising edge
 CAPTURE:
 .wrap_target
-    in pins, 12
-    in null, 4
+    in pins, 12        ; one sample per PIO clock; autopush at 12-bit threshold
 .wrap
 
 .program capture_prog_trigger_fall
@@ -40,8 +38,7 @@ WAIT_RISE:
 WAIT_FALL:
     jmp pin  WAIT_FALL       ; spin while still high (falling = pin goes low)
 .wrap_target
-    in pins, 12
-    in null, 4
+    in pins, 12        ; one sample per PIO clock; autopush at 12-bit threshold
 .wrap
 
 .program capture_prog_trigger_both
@@ -53,16 +50,14 @@ WAIT_FALL:
     jmp pin  WAIT_FALL       ; spin while high
 CAPTURE:
 .wrap_target
-    in pins, 12
-    in null, 4
+    in pins, 12        ; one sample per PIO clock; autopush at 12-bit threshold
 .wrap
 
 .program capture_prog_trigger_low_level
 WAIT_LOW:
     jmp pin  WAIT_LOW        ; spin while pin is high
 .wrap_target
-    in pins, 12
-    in null, 4
+    in pins, 12        ; one sample per PIO clock; autopush at 12-bit threshold
 .wrap
 
 .program capture_prog_trigger_high_level
@@ -71,6 +66,5 @@ WAIT_HIGH:
     jmp      WAIT_HIGH
 CAPTURE:
 .wrap_target
-    in pins, 12
-    in null, 4
+    in pins, 12        ; one sample per PIO clock; autopush at 12-bit threshold
 .wrap

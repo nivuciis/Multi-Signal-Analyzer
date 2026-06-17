@@ -32,9 +32,9 @@
 
 #include <stdint.h>
 
-#define MAX_NUM_CHANNELS                                                                               \
-PICO_DEFAULT_CHANNELS_PIN_COUNT + PICO_DEFAULT_CAN_PIN_COUNT +                             \
-	PICO_DEFAULT_RS232_PIN_COUNT + PICO_DEFAULT_RS485_PIN_COUNT
+#define MAX_NUM_CHANNELS                                                                           \
+	(PICO_DEFAULT_CHANNELS_PIN_COUNT + PICO_DEFAULT_CAN_PIN_COUNT +                            \
+	 PICO_DEFAULT_RS232_PIN_COUNT + PICO_DEFAULT_RS485_PIN_COUNT)
 
 /**
  * @brief Command list

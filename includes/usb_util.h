@@ -84,4 +84,23 @@ bool ana_usb_rx_read(uint8_t *byte);
  */
 void ana_usb_tx_drain(void);
 
+/**
+ * @brief Request an in-progress capture to abort.
+ *
+ * Set from Core 0 when a '+' (host stop) or '*' (reset) byte is seen in the
+ * incoming CDC stream. Core 1 cannot parse these mid-capture because it is busy
+ * inside run_capture, so this cross-core flag lets the capture loop bail out.
+ */
+void ana_usb_request_abort(void);
+
+/**
+ * @brief Check whether a capture abort has been requested. Safe on Core 1.
+ */
+bool ana_usb_abort_requested(void);
+
+/**
+ * @brief Clear the capture-abort request. Called by Core 1 at capture start.
+ */
+void ana_usb_clear_abort(void);
+
 #endif /* USB_UTIL_H */

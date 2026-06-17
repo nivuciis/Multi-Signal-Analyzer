@@ -23,17 +23,11 @@
 #define DIGITAL_CHANNEL_SIZE 12
 #define ANALOG_CHANNEL_SIZE  3
 
-static struct pulseview_sample_config *cfg;
-
 int ana_capture_init(struct ana_module_system *config)
 {
 	if (ana_module_pio_dma_is_busy(config)) {
 		ana_module_pio_dma_abort(config);
 	}
-
-	cfg = ana_sigrok_get_sample_config();
-
-	memset(config->dma.dma_buffer, 0, cfg->samples * sizeof(uint16_t));
 
 	return PICO_OK;
 }
@@ -49,16 +43,6 @@ int ana_capture_data_get_analog_channels_count(uint8_t analog_mask)
 	return enabled_analog_channel_count;
 }
 
-static int ana_get_first_analog_channel(uint8_t analog_mask)
-{
-	for (int i = 0; i < ANALOG_CHANNEL_SIZE; i++) {
-		if (analog_mask & (1 << i)) {
-			return i;
-		}
-	}
-	return 0;
-}
-
 void ana_capture_data_start(struct ana_module_system *config)
 {
 	ana_led_set_status(LED_STATUS_CAPTURING);
@@ -69,7 +53,8 @@ void ana_capture_data_start(struct ana_module_system *config)
 bool ana_capture_data_wait(struct ana_module_system *config)
 {
 	while (ana_module_pio_dma_is_busy(config)) {
-		if (!ana_usb_is_connected()) {
+
+		if (!ana_usb_is_connected() || ana_usb_abort_requested()) {
 			ana_module_pio_dma_abort(config);
 			return false;
 		}

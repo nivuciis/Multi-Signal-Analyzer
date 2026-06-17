@@ -5,6 +5,7 @@ void handle_set_trigger(void)
 	struct sigrok_handler *self = ana_sigrok_get_self();
 	if (self->cmd_str_index < 3) {
 		log_warn("sigrok", "Trigger command too short");
+		self->response[0] = '\0';
 		return;
 	}
 
@@ -21,6 +22,7 @@ void handle_set_trigger(void)
 	if (self->end_ptr == (char *)&self->cmd_str[2] || self->end_ptr == NULL ||
 	    *self->end_ptr != '\0') {
 		log_warn("sigrok", "Invalid trigger channel: %s", &self->cmd_str[2]);
+		self->response[0] = '\0';
 		return;
 	}
 
@@ -28,6 +30,7 @@ void handle_set_trigger(void)
 
 	if (ch < 0 || ch >= PICO_DEFAULT_CHANNELS_PIN_COUNT) {
 		log_warn("sigrok", "Trigger channel out of range: %d", ch);
+		self->response[0] = '\0';
 		return;
 	}
 
@@ -50,6 +53,7 @@ void handle_set_trigger(void)
 		break;
 	default:
 		log_warn("sigrok", "Unknown trigger type: %c", type_char);
+		self->response[0] = '\0';
 		return;
 	}
 

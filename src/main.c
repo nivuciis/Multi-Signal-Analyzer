@@ -20,7 +20,7 @@
  *
  * Core 1 — Sigrok processing:
  *   usb_util rx_ring → ana_sigrok_handle_process_byte() → usb_util tx_ring
- *                                                          (via ana_usb_write)
+ *                                                          (by ana_usb_write)
  *
  */
 
@@ -29,6 +29,7 @@
 #include "channels.h"
 #include "device/usbd.h"
 #include "led.h"
+#include "rs485.h"
 #include "handles/sigrok_handler.h"
 #include "usb_util.h"
 #include <stdint.h>
@@ -42,9 +43,18 @@
 
 static bool ana_sync_led_with_usb_connection(struct repeating_timer *rt)
 {
+	static bool last_connected = false;
 	bool connected = tud_cdc_connected();
+
 	ana_usb_set_connected(connected);
-	ana_led_set_status(connected ? LED_STATUS_CONNECTED : LED_STATUS_OFF);
+
+	if (connected != last_connected) {
+		last_connected = connected;
+		if (!connected || ana_led_get_status() != LED_STATUS_CAPTURING) {
+			ana_led_set_status(connected ? LED_STATUS_CONNECTED
+						     : LED_STATUS_OFF);
+		}
+	}
 	return true;
 }
 
@@ -69,6 +79,7 @@ int main(void)
 	tusb_init();
 	ana_sigrok_handle_init();
 	ana_channels_init(pio0);
+	ana_rs485_init(pio1);
 	ana_adc_init();
 
 	multicore_launch_core1(ana_core1_entry);
@@ -76,6 +87,11 @@ int main(void)
 	struct repeating_timer usb_connection_timer;
 
 	if (ana_capture_init(ana_channels_get_module()) != PICO_OK) {
+		ana_led_set_status(LED_STATUS_ERROR);
+		return PICO_ERROR_IO;
+	}
+
+	if (ana_capture_init(ana_rs485_get_module()) != PICO_OK) {
 		ana_led_set_status(LED_STATUS_ERROR);
 		return PICO_ERROR_IO;
 	}
@@ -91,6 +107,18 @@ int main(void)
 		/* CDC → RX ring (Core 1 will consume) */
 		if (tud_cdc_available()) {
 			uint32_t count = tud_cdc_read(tmp, sizeof(tmp));
+
+			/* '+' (host stop) and '*' (reset) must abort a running capture.
+			 * Core 1 is blocked in run_capture and cannot parse them in
+			 * time, so flag the abort here; the bytes still go to the ring
+			 * so the parser resets its state afterwards. */
+			for (uint32_t i = 0; i < count; i++) {
+				if (tmp[i] == '+' || tmp[i] == '*') {
+					ana_usb_request_abort();
+					break;
+				}
+			}
+
 			ana_usb_rx_write(tmp, count);
 		}
 

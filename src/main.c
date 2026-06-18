@@ -29,6 +29,7 @@
 #include "channels.h"
 #include "device/usbd.h"
 #include "led.h"
+#include "rs232.h"
 #include "rs485.h"
 #include "handles/sigrok_handler.h"
 #include "usb_util.h"
@@ -80,6 +81,7 @@ int main(void)
 	ana_sigrok_handle_init();
 	ana_channels_init(pio0);
 	ana_rs485_init(pio1);
+	ana_rs232_init(pio2);
 	ana_adc_init();
 
 	multicore_launch_core1(ana_core1_entry);
@@ -92,6 +94,11 @@ int main(void)
 	}
 
 	if (ana_capture_init(ana_rs485_get_module()) != PICO_OK) {
+		ana_led_set_status(LED_STATUS_ERROR);
+		return PICO_ERROR_IO;
+	}
+
+	if (ana_capture_init(ana_rs232_get_module()) != PICO_OK) {
 		ana_led_set_status(LED_STATUS_ERROR);
 		return PICO_ERROR_IO;
 	}

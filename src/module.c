@@ -29,7 +29,7 @@
  * pp_produced/pp_consumed to know which buffer is ready, and pp_overflow flags
  * the producer lapping the consumer (USB too slow → soft overflow).
  */
-#define ANA_PP_MAX_MODULES 2
+#define ANA_PP_MAX_MODULES 3
 static struct ana_module_system *pp_modules[ANA_PP_MAX_MODULES];
 static int pp_module_count;
 static bool pp_irq_installed;

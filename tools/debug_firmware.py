@@ -33,7 +33,7 @@ import time
 import struct
 
 # Done marker: "$<n>+". '$' (0x24) never appears in sample data (data >= 0x80,
-# RLE 0x30-0x6F), so it uniquely terminates the stream — no trailing null needed.
+# RLE counts 0x30-0x7F), so it uniquely terminates the stream — no trailing null needed.
 DONE_MARKER_RE = re.compile(rb'\$(\d+)\+')
 
 try:
@@ -44,8 +44,13 @@ except ImportError:
     sys.exit(1)
 
 # ── srpico protocol constants ──────────────────────────────────────────────────
-RLE_BASE    = 0x30   # count byte: 0x30 = 1 repeat, 0x6F = 64 repeats
-RLE_MAX     = 0x6F
+# RLE count bytes (< 0x80) follow a sample and repeat it (libsigrok srpico
+# general-mode, process_slice):
+#   fine   0x30-0x4F (48-79):  repeats = byte - 47    → 1..32
+#   coarse 0x50-0x7F (80-127): repeats = (byte-78)*32 → 64,96,..,1568
+# Multiple count bytes accumulate. Data bytes (>= 0x80) are never RLE.
+RLE_MIN     = 0x30   # lowest RLE count byte
+RLE_MAX     = 0x7F   # highest RLE count byte
 DATA_MIN    = 0x80   # sample data bytes always have bit 7 set
 ABORT_MARKER = b'!!!'
 
@@ -68,7 +73,7 @@ def decode_stream(raw: bytes, dig_bps: int, ana_bps: int) -> dict:
     """
     Decode a complete srpico data stream (including done marker).
 
-    raw      : bytes from first data byte up to and including the null stop byte
+    raw      : bytes from first data byte up to and including the done marker
     dig_bps  : bytes per digital sample (1 or 2)
     ana_bps  : bytes per analog sample (number of active analog channels)
 
@@ -102,25 +107,36 @@ def decode_stream(raw: bytes, dig_bps: int, ana_bps: int) -> dict:
         payload = payload[len(ABORT_MARKER):]
 
     # ── decode sample groups ──
-    # Frame: [RLE_count] [dig_bytes] [ana_ch0..chN for sample 0] ... [ana for sample count-1]
-    # count * ana_bps analog bytes follow the digital bytes (one group per repeat).
+    # Frame: [dig_bytes] [ana_ch0..chN] [RLE_count...]
+    # A sample (digital bytes >= 0x80, then ana_bps analog bytes) is emitted once;
+    # RLE count bytes (< 0x80) that follow repeat the PREVIOUS sample. Multiple
+    # count bytes accumulate (libsigrok srpico process_slice convention).
     i = 0
+    last_dig = None
+    last_ana = None
 
     while i < len(payload):
         b = payload[i]
 
-        if RLE_BASE <= b <= RLE_MAX:
-            count = b - RLE_BASE + 1
-            i += 1
-        elif b >= DATA_MIN:
-            count = 1
-            # do NOT advance i — this byte is the first sample byte
-        else:
-            errors.append(f"unexpected byte 0x{b:02X} at offset {i} "
-                          f"(not RLE 0x30-0x6F, not data 0x80-0xFF)")
+        # RLE count byte: repeat the previous sample.
+        if b < DATA_MIN:
+            if not (RLE_MIN <= b <= RLE_MAX):
+                errors.append(f"unexpected byte 0x{b:02X} at offset {i} "
+                              f"(not RLE 0x30-0x7F, not data 0x80-0xFF)")
+                i += 1
+                continue
+            if last_dig is None:
+                errors.append(f"RLE byte 0x{b:02X} at offset {i} with no prior sample")
+                i += 1
+                continue
+            repeats = (b - 47) if b <= 79 else (b - 78) * 32
+            for _ in range(repeats):
+                digital.append(last_dig)
+                analog.append(list(last_ana))
             i += 1
             continue
 
+        # New sample: digital bytes first.
         if i + dig_bps > len(payload):
             errors.append(f"truncated digital at offset {i}: "
                           f"need {dig_bps} bytes, have {len(payload) - i}")
@@ -136,24 +152,26 @@ def decode_stream(raw: bytes, dig_bps: int, ana_bps: int) -> dict:
                 errors.append(f"digital byte 0x{db:02X} missing high bit")
             dig_val |= (db & 0x7F) << (7 * byte_idx)
 
-        # one analog group per sample in the run
-        for _ in range(count):
-            if ana_bps > 0:
-                if i + ana_bps > len(payload):
-                    errors.append(f"truncated analog at offset {i}: "
-                                  f"need {ana_bps} bytes, have {len(payload) - i}")
-                    break
-                ab_group = payload[i: i + ana_bps]
-                i += ana_bps
-                mv_group = []
-                for ab in ab_group:
-                    if not (ab & 0x80):
-                        errors.append(f"analog byte 0x{ab:02X} missing high bit")
-                    mv_group.append(round((ab & 0x7F) * ANA_UV_PER_LSB / 1000.0, 2))
-            else:
-                mv_group = []
-            digital.append(dig_val)
-            analog.append(mv_group)
+        # analog group for this sample
+        if ana_bps > 0:
+            if i + ana_bps > len(payload):
+                errors.append(f"truncated analog at offset {i}: "
+                              f"need {ana_bps} bytes, have {len(payload) - i}")
+                break
+            ab_group = payload[i: i + ana_bps]
+            i += ana_bps
+            mv_group = []
+            for ab in ab_group:
+                if not (ab & 0x80):
+                    errors.append(f"analog byte 0x{ab:02X} missing high bit")
+                mv_group.append(round((ab & 0x7F) * ANA_UV_PER_LSB / 1000.0, 2))
+        else:
+            mv_group = []
+
+        last_dig = dig_val
+        last_ana = mv_group
+        digital.append(dig_val)
+        analog.append(mv_group)
 
     return {
         'total_sent': total_sent,

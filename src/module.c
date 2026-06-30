@@ -139,7 +139,7 @@ void ana_module_set_sample_rate(struct ana_module_system *config)
 
 inline static void ana_module_verify_pp_irq(struct ana_module_dma *dma, uint8_t instance)
 {
-	if (!dma_channel_get_irq0_status(instance)) {
+	if (dma_channel_get_irq0_status(instance)) {
 		dma_channel_acknowledge_irq0(instance);
 		dma->pp_produced++;
 		if (dma->pp_produced - dma->pp_consumed >= 2u) {

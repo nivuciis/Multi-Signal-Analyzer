@@ -1,2 +1,11 @@
 build
 /.vscode/
+
+*md
+__pycahe__/
+*.pyc
+*.pyo
+.cache/
+*.egg-info/
+dist/
+build/

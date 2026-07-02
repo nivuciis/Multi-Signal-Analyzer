@@ -2,7 +2,7 @@ build
 /.vscode/
 
 *md
-__pucahe__/
+__pycahe__/
 *.pyc
 *.pyo
 .cache/

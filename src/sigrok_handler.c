@@ -29,6 +29,12 @@
 
 #define CAPTURE_CHUNK_SIZE 1024U
 
+/* digital_mask bits per capture module (see merge_digital_sample) */
+#define DIGITAL_MASK_CHANNELS 0x0FFFu     /* channels 0-11  */
+#define DIGITAL_MASK_RS485    (1u << 12)  /* channel 12     */
+#define DIGITAL_MASK_RS232    (3u << 13)  /* channels 13-14 */
+
+
 static struct sigrok_handler self = {
 	.num_samples = 1024,
 	.digital_mask = DIGITAL_MASK_DEFAULT,
@@ -66,6 +72,11 @@ struct tx_stream {
 
 static uint8_t active_analog_channels[ADC_NUM_CHANNELS];
 static uint8_t active_analog_count;
+
+static inline bool module_active(uint16_t module_mask)
+{
+	return (self.digital_mask & module_mask) != 0u;
+}
 
 void ana_send_response(const char *str)
 {
@@ -248,7 +259,10 @@ static bool ana_send_packet_channels(const uint16_t *dig_buf, const uint16_t *rs
 			run++;
 		}
 
-		if (!tx_reserve(&tx, self.tx.bytes_per_dig_sample + 2u)) {
+		/* Worst-case RLE bytes for this run: one coarse byte per 1568
+		 * repeats, plus at most one partial coarse and one fine byte. */
+		repeats = run - 1u;
+		if (!tx_reserve(&tx, self.tx.bytes_per_dig_sample + repeats / 1568u + 2u)) {
 			return false;
 		}
 
@@ -262,7 +276,6 @@ static bool ana_send_packet_channels(const uint16_t *dig_buf, const uint16_t *rs
 			tx.idx++;
 		}
 
-		repeats = run - 1u;
 		while (repeats >= 64u) {
 			mult = repeats / 32u;
 			if (mult > 49u) {
@@ -297,6 +310,9 @@ static bool capture_chunks(struct ana_module_system *config, uint32_t n_samples,
 	struct ana_module_system *rs485_mod = ana_rs485_get_module();
 	struct ana_module_system *rs232_mod = ana_rs232_get_module();
 
+	bool rs485_on = module_active(DIGITAL_MASK_RS485);
+	bool rs232_on = module_active(DIGITAL_MASK_RS232);
+
 	uint32_t remaining = n_samples;
 
 	uint16_t *buf[2] = {config->dma.dma_buffer, ana_channels_get_alt_buffer()};
@@ -314,18 +330,26 @@ static bool capture_chunks(struct ana_module_system *config, uint32_t n_samples,
 
 		self.cfg.samples = chunk;
 		ana_module_set_sample_rate(config);
-		ana_module_set_sample_rate(rs485_mod);
-		ana_module_set_sample_rate(rs232_mod);
 
 		config->dma.dma_buffer = buf[cap_idx];
 		rs485_mod->dma.dma_buffer = buf_rs485[cap_idx];
 		rs232_mod->dma.dma_buffer = buf_rs232[cap_idx];
 		memset(buf[cap_idx], 0, chunk * sizeof(uint16_t));
-		memset(buf_rs485[cap_idx], 0, chunk * sizeof(uint16_t));
-		memset(buf_rs232[cap_idx], 0, chunk * sizeof(uint16_t));
+		if (rs485_on) {
+			ana_module_set_sample_rate(rs485_mod);
+			memset(buf_rs485[cap_idx], 0, chunk * sizeof(uint16_t));
+		}
+		if (rs232_on) {
+			ana_module_set_sample_rate(rs232_mod);
+			memset(buf_rs232[cap_idx], 0, chunk * sizeof(uint16_t));
+		}
 		ana_capture_data_start(config);
-		ana_capture_data_start(rs485_mod);
-		ana_capture_data_start(rs232_mod);
+		if (rs485_on) {
+			ana_capture_data_start(rs485_mod);
+		}
+		if (rs232_on) {
+			ana_capture_data_start(rs232_mod);
+		}
 
 		/* Start the ADC together with the digital DMA so the analog
 		 * window opens at the same instant as the digital one. */
@@ -338,8 +362,12 @@ static bool capture_chunks(struct ana_module_system *config, uint32_t n_samples,
 			if (!ana_send_packet_channels(tx_buf, tx_rs485_buf, tx_rs232_buf,
 						      tx_samples, &chunk_bytes)) {
 				ana_module_pio_dma_abort(config);
-				ana_module_pio_dma_abort(rs485_mod);
-				ana_module_pio_dma_abort(rs232_mod);
+				if (rs485_on) {
+					ana_module_pio_dma_abort(rs485_mod);
+				}
+				if (rs232_on) {
+					ana_module_pio_dma_abort(rs232_mod);
+				}
 				ana_adc_capture_abort();
 				config->dma.dma_buffer = buf[0];
 				rs485_mod->dma.dma_buffer = buf_rs485[0];
@@ -350,8 +378,12 @@ static bool capture_chunks(struct ana_module_system *config, uint32_t n_samples,
 		}
 
 		if (!ana_capture_data_wait(config)) {
-			ana_module_pio_dma_abort(rs485_mod);
-			ana_module_pio_dma_abort(rs232_mod);
+			if (rs485_on) {
+				ana_module_pio_dma_abort(rs485_mod);
+			}
+			if (rs232_on) {
+				ana_module_pio_dma_abort(rs232_mod);
+			}
 			ana_adc_capture_abort();
 			config->dma.dma_buffer = buf[0];
 			rs485_mod->dma.dma_buffer = buf_rs485[0];
@@ -359,8 +391,10 @@ static bool capture_chunks(struct ana_module_system *config, uint32_t n_samples,
 			return false;
 		}
 
-		if (!ana_capture_data_wait(rs485_mod)) {
-			ana_module_pio_dma_abort(rs232_mod);
+		if (rs485_on && !ana_capture_data_wait(rs485_mod)) {
+			if (rs232_on) {
+				ana_module_pio_dma_abort(rs232_mod);
+			}
 			ana_adc_capture_abort();
 			config->dma.dma_buffer = buf[0];
 			rs485_mod->dma.dma_buffer = buf_rs485[0];
@@ -368,7 +402,7 @@ static bool capture_chunks(struct ana_module_system *config, uint32_t n_samples,
 			return false;
 		}
 
-		if (!ana_capture_data_wait(rs232_mod)) {
+		if (rs232_on && !ana_capture_data_wait(rs232_mod)) {
 			ana_adc_capture_abort();
 			config->dma.dma_buffer = buf[0];
 			rs485_mod->dma.dma_buffer = buf_rs485[0];
@@ -411,7 +445,7 @@ static bool capture_chunks(struct ana_module_system *config, uint32_t n_samples,
 
 static bool capture_continuous_digital(uint32_t n_samples, uint32_t *total_sent)
 {
-	uint32_t need = (n_samples + CAPTURE_CHUNK_SIZE - 1u) / CAPTURE_CHUNK_SIZE;
+	uint32_t need = (n_samples + BUFFER_SIZE - 1u) / BUFFER_SIZE;
 	uint32_t consumed = 0;
 	uint32_t bytes = 0;
 	bool ok = true;
@@ -420,17 +454,35 @@ static bool capture_continuous_digital(uint32_t n_samples, uint32_t *total_sent)
 	struct ana_module_system *rs = ana_rs485_get_module();
 	struct ana_module_system *rs232 = ana_rs232_get_module();
 
-	ana_module_pingpong_start(ch);
-	ana_module_pingpong_start(rs);
-	ana_module_pingpong_start(rs232);
+	bool ch_on = module_active(DIGITAL_MASK_CHANNELS);
+	bool rs_on = module_active(DIGITAL_MASK_RS485);
+	bool rs232_on = module_active(DIGITAL_MASK_RS232);
+
+	if (!ch_on && !rs_on && !rs232_on) {
+		return true;
+	}
+
+	if (ch_on) {
+		ch->dma.pp_target = need;
+		ana_module_pingpong_start(ch);
+	}
+	if (rs_on) {
+		rs->dma.pp_target = need;
+		ana_module_pingpong_start(rs);
+	}
+	if (rs232_on) {
+		rs232->dma.pp_target = need;
+		ana_module_pingpong_start(rs232);
+	}
 
 	while (consumed < need) {
-		/* Wait until all three rings have completed the buffer at index `consumed` */
-		while (ch->dma.pp_produced <= consumed || rs->dma.pp_produced <= consumed ||
-		       rs232->dma.pp_produced <= consumed) {
+		/* Wait until every active ring has completed the buffer at index `consumed` */
+		while ((ch_on && ch->dma.pp_produced <= consumed) ||
+		       (rs_on && rs->dma.pp_produced <= consumed) ||
+		       (rs232_on && rs232->dma.pp_produced <= consumed)) {
 			if (!ana_usb_is_connected() || ana_usb_abort_requested() ||
-			    ch->dma.pp_overflow || rs->dma.pp_overflow ||
-			    rs232->dma.pp_overflow) {
+			    (ch_on && ch->dma.pp_overflow) || (rs_on && rs->dma.pp_overflow) ||
+			    (rs232_on && rs232->dma.pp_overflow)) {
 				ok = false;
 				goto stop;
 			}
@@ -440,8 +492,8 @@ static bool capture_continuous_digital(uint32_t n_samples, uint32_t *total_sent)
 		uint16_t *dbuf = (idx == 0u) ? ch->dma.buf_a : ch->dma.buf_b;
 		uint16_t *rbuf = (idx == 0u) ? rs->dma.buf_a : rs->dma.buf_b;
 		uint16_t *rs232buf = (idx == 0u) ? rs232->dma.buf_a : rs232->dma.buf_b;
-		uint32_t remain = n_samples - consumed * CAPTURE_CHUNK_SIZE;
-		uint32_t samples = (remain < CAPTURE_CHUNK_SIZE) ? remain : CAPTURE_CHUNK_SIZE;
+		uint32_t remain = n_samples - consumed * BUFFER_SIZE;
+		uint32_t samples = (remain < BUFFER_SIZE) ? remain : BUFFER_SIZE;
 
 		if (!ana_send_packet_channels(dbuf, rbuf, rs232buf, samples, &bytes)) {
 			ok = false;
@@ -455,16 +507,23 @@ static bool capture_continuous_digital(uint32_t n_samples, uint32_t *total_sent)
 		rs->dma.pp_consumed = consumed;
 		rs232->dma.pp_consumed = consumed;
 
-		if (ch->dma.pp_overflow || rs->dma.pp_overflow || rs232->dma.pp_overflow) {
+		if ((ch_on && ch->dma.pp_overflow) || (rs_on && rs->dma.pp_overflow) ||
+		    (rs232_on && rs232->dma.pp_overflow)) {
 			ok = false;
 			goto stop;
 		}
 	}
 
 stop:
-	ana_module_pingpong_stop(ch);
-	ana_module_pingpong_stop(rs);
-	ana_module_pingpong_stop(rs232);
+	if (ch_on) {
+		ana_module_pingpong_stop(ch);
+	}
+	if (rs_on) {
+		ana_module_pingpong_stop(rs);
+	}
+	if (rs232_on) {
+		ana_module_pingpong_stop(rs232);
+	}
 	return ok;
 }
 
@@ -494,8 +553,12 @@ void run_capture(bool continuous)
 		    self.trigger_config.trigger_mask == 0) {
 			ana_channels_apply_trigger();
 			ana_module_set_sample_rate(config);
-			ana_module_set_sample_rate(ana_rs485_get_module());
-			ana_module_set_sample_rate(ana_rs232_get_module());
+			if (module_active(DIGITAL_MASK_RS485)) {
+				ana_module_set_sample_rate(ana_rs485_get_module());
+			}
+			if (module_active(DIGITAL_MASK_RS232)) {
+				ana_module_set_sample_rate(ana_rs232_get_module());
+			}
 
 			ok = capture_continuous_digital(self.num_samples, &total_sent);
 

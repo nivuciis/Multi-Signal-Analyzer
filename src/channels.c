@@ -21,8 +21,8 @@
 
 /* 2048-byte alignment required by the ping-pong DMA write-address ring
  * (see ana_module_pp_configure). */
-static uint16_t digital_channel_buffer_a[1024] __attribute__((aligned(2048)));
-static uint16_t digital_channel_buffer_b[1024] __attribute__((aligned(2048)));
+static uint16_t digital_channel_buffer_a[BUFFER_SIZE] __attribute__((aligned(2*BUFFER_SIZE)));
+static uint16_t digital_channel_buffer_b[BUFFER_SIZE] __attribute__((aligned(2*BUFFER_SIZE)));
 
 struct ana_module_system channels = {
 	.module =
@@ -49,7 +49,7 @@ void ana_channels_init(PIO pio)
 	ana_module_pio_init(&channels);
 	ana_module_dma_init(&channels);
 	ana_module_pingpong_init(&channels, digital_channel_buffer_a, digital_channel_buffer_b,
-				 1024);
+				 BUFFER_SIZE);
 
 	return;
 }

@@ -31,6 +31,12 @@
 #include <pico/types.h>
 
 /**
+ * @brief Size of the ping-pong buffer for DMA transfers
+ * 
+ */
+#define BUFFER_SIZE 1024 
+
+/**
  * @brief Configuration structure for each module
  *
  */
@@ -58,6 +64,10 @@ struct ana_module_dma {
 	uint16_t *buf_a;             /**< Ping-pong buffer A (filled by instance) */
 	uint16_t *buf_b;             /**< Ping-pong buffer B (filled by instance_b) */
 	uint32_t pp_chunk;           /**< Samples per ping-pong buffer */
+	uint32_t pp_target;          /**< Buffers needed this capture (0 = unlimited).
+					  When the IRQ sees the target reached it halts the
+					  PIO SM (and pre-disarms the final chain) so the
+					  producer never laps a fully-captured stream. */
 	volatile uint32_t pp_produced; /**< Buffers completed by DMA (IRQ) */
 	volatile uint32_t pp_consumed; /**< Buffers consumed by Core 1 */
 	volatile bool pp_overflow;     /**< Producer lapped consumer → data loss */

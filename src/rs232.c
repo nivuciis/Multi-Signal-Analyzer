@@ -21,8 +21,8 @@
 
 /* 2048-byte alignment required by the ping-pong DMA write-address ring
  * (see ana_module_pp_configure). */
-static uint16_t rs232_buffer_a[1024] __attribute__((aligned(2048)));
-static uint16_t rs232_buffer_b[1024] __attribute__((aligned(2048)));
+static uint16_t rs232_buffer_a[BUFFER_SIZE] __attribute__((aligned(2 * BUFFER_SIZE)));
+static uint16_t rs232_buffer_b[BUFFER_SIZE] __attribute__((aligned(2 * BUFFER_SIZE)));
 
 struct ana_module_system rs232 = {
 	.module = {
@@ -47,7 +47,7 @@ void ana_rs232_init(PIO pio)
 
 	ana_module_pio_init(&rs232);
 	ana_module_dma_init(&rs232);
-	ana_module_pingpong_init(&rs232, rs232_buffer_a, rs232_buffer_b, 1024);
+	ana_module_pingpong_init(&rs232, rs232_buffer_a, rs232_buffer_b, BUFFER_SIZE);
 }
 
 struct ana_module_system *ana_rs232_get_module(void)

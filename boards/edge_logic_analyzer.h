@@ -38,20 +38,6 @@ pico_board_cmake_set(PICO_PLATFORM, rp2350)
 #define PICO_RP2350A 1
 
 /**
- * @brief UART configuration
- *
- */
-#ifndef PICO_DEFAULT_UART
-#define PICO_DEFAULT_UART 0
-#endif
-#ifndef PICO_DEFAULT_UART_TX_PIN
-#define PICO_DEFAULT_UART_TX_PIN 0
-#endif
-#ifndef PICO_DEFAULT_UART_RX_PIN
-#define PICO_DEFAULT_UART_RX_PIN 1
-#endif
-
-/**
  * @brief ADC configuration
  *
  */

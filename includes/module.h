@@ -3,7 +3,7 @@
  *
  * @brief Base module for the Multi-Signal Analyzer components
  * @author João Matheus Nascimento Dias (joao.dias@edge.ufal.br)
- * @version 0.1
+ * @version 0.2
  * @date 04/02/2026
  *
  * @copyright Copyright (c) 2026
@@ -20,21 +20,17 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <hardware/address_mapped.h>
 #include <hardware/clocks.h>
-#include <hardware/dma.h>
 #include <hardware/gpio.h>
-#include <hardware/irq.h>
-#include <hardware/pio.h>
 #include <pico/error.h>
 #include <pico/time.h>
 #include <pico/types.h>
 
 /**
- * @brief Size of the ping-pong buffer for DMA transfers
- * 
+ * @brief Size of the capture buffers, in samples
+ *
  */
-#define BUFFER_SIZE 1024 
+#define BUFFER_SIZE 1024
 
 /**
  * @brief Configuration structure for each module
@@ -48,146 +44,115 @@ struct ana_module_config {
 };
 
 /**
- * @brief Configuration structure for DMA
+ * @brief CPU capture state for a module.
  *
+ * The capture itself is performed by a shared CPU sampler (see module.c):
+ * one SIO GPIO read per sample serves every armed module at once, so the
+ * per-module state is just the destination buffer and the armed/complete
+ * flags.
  */
-struct ana_module_dma {
-	uint16_t *dma_buffer;            /**< DMA buffer pointer */
-	uint8_t instance;                /**< DMA channel number */
-	volatile bool has_complete;      /**< DMA completion flag */
-	dma_channel_config instance_cfg; /**< DMA channel configuration */
-
-	/* Chained ping-pong state (gap-free continuous digital capture).
-	 * Two DMA channels (instance = A, instance_b = B) auto-chain so the PIO
-	 * never stalls; an IRQ recycles each buffer and tracks producer count. */
-	uint8_t instance_b;          /**< Second ping-pong DMA channel */
-	uint16_t *buf_a;             /**< Ping-pong buffer A (filled by instance) */
-	uint16_t *buf_b;             /**< Ping-pong buffer B (filled by instance_b) */
-	uint32_t pp_chunk;           /**< Samples per ping-pong buffer */
-	uint32_t pp_target;          /**< Buffers needed this capture (0 = unlimited).
-					  When the IRQ sees the target reached it halts the
-					  PIO SM (and pre-disarms the final chain) so the
-					  producer never laps a fully-captured stream. */
-	volatile uint32_t pp_produced; /**< Buffers completed by DMA (IRQ) */
-	volatile uint32_t pp_consumed; /**< Buffers consumed by Core 1 */
-	volatile bool pp_overflow;     /**< Producer lapped consumer → data loss */
+struct ana_module_capture {
+	uint16_t *buffer;           /**< Destination buffer for the next capture */
+	volatile bool pending;      /**< Armed, waiting for the CPU sampler to run */
+	volatile bool has_complete; /**< Last capture finished */
 };
 
 /**
- * @brief Configuration structure for PIO
+ * @brief CPU trigger condition polled before the sampling loop starts.
  *
  */
-struct ana_module_pio {
-	PIO instance;                     /**< PIO instance */
-	uint8_t sm;                       /**< State machine number */
-	uint8_t pio_offset;               /**< Offset of the PIO program */
-	uint8_t jmp_pin;                  /**< Pin used for conditional jumps in the PIO program */
-	const pio_program_t *pio_program; /**< Pointer to the PIO program */
-	pio_sm_config (*get_default_cfg_func)(
-		uint8_t offset); /**< Function to get default state machine configuration */
+struct ana_module_trigger {
+	bool enabled;               /**< Trigger armed for the next capture */
+	uint8_t gpio;               /**< GPIO polled for the trigger condition */
+	enum ana_trigger_type type; /**< Level/edge condition */
 };
 
 /**
- * @brief Configuration structure for PIO programs and DMA module
+ * @brief Aggregated state for one capture module
  *
  */
 struct ana_module_system {
-	struct ana_module_config module; /**< Module configuration */
-	struct ana_module_pio pio;       /**< PIO configuration */
-	struct ana_module_dma dma;       /**< DMA configuration */
+	struct ana_module_config module;   /**< Module configuration */
+	struct ana_module_capture capture; /**< CPU capture state */
+	struct ana_module_trigger trigger; /**< CPU trigger condition */
 };
 
 /**
- * @brief Initialize the PIO configuration
+ * @brief Initialize the module GPIOs as pulled-down inputs and register the
+ * module with the shared CPU sampler.
  *
  * @param config Structure referencing the module configuration
  */
-void ana_module_pio_init(struct ana_module_system *config);
+void ana_module_gpio_init(struct ana_module_system *config);
 
 /**
- * @brief Initialize the DMA configuration
+ * @brief Arm the module for the next CPU capture (non-blocking).
+ *
+ * The actual sampling happens inside ana_module_capture_wait(): the first
+ * wait call runs the shared sampler, which fills the buffers of every armed
+ * module simultaneously (one GPIO read per sample).
  *
  * @param config Structure referencing the module configuration
  */
-void ana_module_dma_init(struct ana_module_system *config);
+void ana_module_capture_arm(struct ana_module_system *config);
 
 /**
- * @brief Abort the DMA operation for the PIO program
+ * @brief Run/wait for the CPU capture armed by ana_module_capture_arm().
+ *
+ * The first waited module drives the shared sampling loop; modules waited
+ * afterwards return immediately since their buffer was filled in the same
+ * loop.
  *
  * @param config Structure referencing the module configuration
+ * @return true  Capture completed
+ * @return false Aborted (host '+'/'*' or USB disconnect)
  */
-void ana_module_pio_dma_abort(struct ana_module_system *config);
+bool ana_module_capture_wait(struct ana_module_system *config);
 
 /**
- * @brief Start the DMA operation for the PIO program
+ * @brief Check whether the module is armed with an unfinished capture.
  *
  * @param config Structure referencing the module configuration
- */
-void ana_module_pio_dma_start(struct ana_module_system *config);
-
-/**
- * @brief Wait for the DMA operation to complete for the PIO program
- *
- * @param config Structure referencing the module configuration
-*/
-void ana_module_pio_dma_wait(struct ana_module_system *config);
-
-/**
- * @brief Check if the DMA operation is busy for the PIO program
- *
- * @param config Structure referencing the module configuration
- * @return true  If the DMA is busy
+ * @return true  If a capture is pending
  * @return false Otherwise
  */
-bool ana_module_pio_dma_is_busy(struct ana_module_system *config);
+bool ana_module_capture_is_busy(struct ana_module_system *config);
 
 /**
- * @brief Set the sample rate for the module
+ * @brief Abort a pending capture (clears the armed state).
  *
  * @param config Structure referencing the module configuration
- * @param sample_rate_hz Sample rate in Hz
+ */
+void ana_module_capture_abort(struct ana_module_system *config);
+
+/**
+ * @brief Set the sample rate for the CPU sampler.
+ *
+ * Computes the SysTick cycle budget per sample from the live sysclk. The
+ * pacing is shared by every module (a single sampling loop reads all pins).
+ *
+ * @param config Structure referencing the module configuration
  */
 void ana_module_set_sample_rate(struct ana_module_system *config);
 
 /**
- * @brief Reload the PIO program with a new program and optional jmp_pin.
+ * @brief Arm a CPU trigger condition for the next capture.
  *
- * @note Disables the SM, removes the old program, loads the new one and
- * re-initialises the state machine.  Call before each capture when the
- * trigger type or channel may have changed.
+ * The shared sampler polls the GPIO until the condition matches before
+ * starting the paced sampling loop.
  *
- * @param config          Structure referencing the module configuration
- * @param new_program     New PIO program to load
- * @param new_cfg_func    Default-config getter for the new program
- * @param jmp_pin         GPIO used by jmp pin (0xFF = not used)
+ * @param config Structure referencing the module configuration
+ * @param gpio   GPIO polled for the condition
+ * @param type   Level/edge condition
  */
-void ana_module_pio_reload(struct ana_module_system *config, const pio_program_t *new_program,
-			   pio_sm_config (*new_cfg_func)(uint8_t offset), uint8_t jmp_pin);
+void ana_module_set_trigger(struct ana_module_system *config, uint8_t gpio,
+			    enum ana_trigger_type type);
 
 /**
- * @brief Register a module for chained ping-pong capture.
+ * @brief Disarm the CPU trigger (captures start immediately).
  *
- * Claims the second DMA channel and records the two ring buffers. Call once
- * after ana_module_dma_init(). The actual channel config is (re)applied in
- * ana_module_pingpong_start() so it always tracks the current PIO SM/DREQ
- * (which changes across ana_module_pio_reload()).
- *
- * @param config Module to register.
- * @param buf_a  First ring buffer (>= chunk samples).
- * @param buf_b  Second ring buffer (>= chunk samples).
- * @param chunk  Samples per buffer.
+ * @param config Structure referencing the module configuration
  */
-void ana_module_pingpong_init(struct ana_module_system *config, uint16_t *buf_a, uint16_t *buf_b,
-			      uint32_t chunk);
-
-/**
- * @brief Start gap-free chained ping-pong capture. PIO runs continuously.
- */
-void ana_module_pingpong_start(struct ana_module_system *config);
-
-/**
- * @brief Stop ping-pong capture: halt PIO and abort both DMA channels.
- */
-void ana_module_pingpong_stop(struct ana_module_system *config);
+void ana_module_clear_trigger(struct ana_module_system *config);
 
 #endif /* MODULE_H */

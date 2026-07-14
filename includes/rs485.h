@@ -18,7 +18,7 @@
 /**
  * @brief Initialize the RS485 module
  */
-void ana_rs485_init(PIO pio);
+void ana_rs485_init(void);
 
 /**
  * @brief Get the module configuration for the RS485 channel
@@ -28,9 +28,9 @@ void ana_rs485_init(PIO pio);
 struct ana_module_system *ana_rs485_get_module(void);
 
 /**
- * @brief Return the DMA buffer not currently pointed to by the module's dma_buffer.
+ * @brief Return the capture buffer not currently pointed to by the module.
  *
- * Used for double-buffering: while DMA fills one buffer the other is free for TX.
+ * Used for double-buffering: while one buffer is being filled the other is free for TX.
  */
 uint16_t *ana_rs485_get_alt_buffer(void);
 

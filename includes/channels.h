@@ -17,9 +17,9 @@
 
 /**
  * @brief Initialize the channels module
- * 
+ *
  */
-void ana_channels_init(PIO pio);
+void ana_channels_init(void);
 
 /**
  * @brief Get the module configuration for the channels
@@ -29,22 +29,22 @@ void ana_channels_init(PIO pio);
 struct ana_module_system* ana_channels_get_module(void);
 
 /**
- * @brief Apply the current trigger configuration to the PIO program.
+ * @brief Apply the current trigger configuration to the CPU sampler.
  *
- * Must be called before each capture. Reloads the PIO state machine with
- * the program matching the trigger type stored in the sigrok handler.
+ * Must be called before each capture. Arms (or clears) the CPU trigger
+ * condition matching the trigger type stored in the sigrok handler.
  */
 void ana_channels_apply_trigger(void);
 
 /**
- * @brief Return the DMA buffer not currently pointed to by the module's dma_buffer.
+ * @brief Return the capture buffer not currently pointed to by the module.
  *
- * Used for double-buffering: while DMA fills one buffer the other is free for TX.
+ * Used for double-buffering: while one buffer is being filled the other is free for TX.
  */
 uint16_t *ana_channels_get_alt_buffer(void);
 
 /**
- * @brief Reload PIO with the simple (no-trigger) capture program.
+ * @brief Clear the CPU trigger (captures start immediately).
  *
  * Call after the first triggered chunk has completed so that subsequent chunks
  * do not re-arm the trigger and wait again instead of capturing continuously.

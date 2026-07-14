@@ -4,7 +4,7 @@
  *
  * @author    Vinicius Rafael Marques de Carvalho <vinicius.carvalho@edge.ufal.br>
  * @author   João Matheus Nascimento Dias <joao.dias@edge.ufal.br>
- * @version   0.1
+ * @version   0.2
  * @date      28/01/2026
  * @copyright  Copyright (c) 2026
  *  ------------------------------------------------------------*/
@@ -25,8 +25,8 @@
 
 int ana_capture_init(struct ana_module_system *config)
 {
-	if (ana_module_pio_dma_is_busy(config)) {
-		ana_module_pio_dma_abort(config);
+	if (ana_module_capture_is_busy(config)) {
+		ana_module_capture_abort(config);
 	}
 
 	return PICO_OK;
@@ -47,18 +47,20 @@ void ana_capture_data_start(struct ana_module_system *config)
 {
 	ana_led_set_status(LED_STATUS_CAPTURING);
 	ana_capture_init(config);
-	ana_module_pio_dma_start(config);
+	ana_module_capture_arm(config);
 }
 
 bool ana_capture_data_wait(struct ana_module_system *config)
 {
-	while (ana_module_pio_dma_is_busy(config)) {
-
-		if (!ana_usb_is_connected() || ana_usb_abort_requested()) {
-			ana_module_pio_dma_abort(config);
-			return false;
-		}
+	if (!ana_usb_is_connected() || ana_usb_abort_requested()) {
+		ana_module_capture_abort(config);
+		return false;
 	}
-	config->dma.has_complete = true;
+
+	if (!ana_module_capture_wait(config)) {
+		ana_module_capture_abort(config);
+		return false;
+	}
+
 	return true;
 }

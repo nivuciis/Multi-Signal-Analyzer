@@ -62,7 +62,6 @@ enum ANA_SYSTEM_STATUS {
 	ANA_SYSTEM_BUSY,         /**< System is busy */
 	ANA_SYSTEM_STARTED,      /**< System has started */
 	ANA_SYSTEM_SENDING,      /**< System is sending data */
-	ANA_SYSTEM_DMA_DONE,     /**< DMA transfer is complete */
 	ANA_SYSTEM_SAMPLES_SENT, /**< Samples have been sent */
 	ANA_SYSTEM_ABORTED,      /**< Transfer was aborted */
 };

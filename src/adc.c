@@ -1,38 +1,35 @@
 /*******************************************************************
  * @file adc.c
  *
- * @brief ADC implementation — DMA-based round-robin capture
+ * @brief ADC implementation — CPU-driven round-robin capture
  * @author João Matheus Nascimento Dias (joao.dias@edge.ufal.br)
- * @version 0.2
+ * @version 0.3
  * @date 23/03/2026
  *
  * @copyright Copyright (c) 2026
  *
- * Capture path (ana_adc_capture_dma):
+ * Capture path:
  *
  *   The ADC is configured in round-robin mode so it automatically cycles
- *   through the enabled channels after each conversion.  A single DMA
- *   channel reads the ADC FIFO using the ADC DREQ, writing interleaved
- *   12-bit samples into adc_raw_dma_buf.
+ *   through the enabled channels after each conversion, pushing 12-bit
+ *   samples into its 8-entry FIFO.  The CPU drains the FIFO into
+ *   adc_scratch via ana_adc_capture_service(), which the digital CPU
+ *   sampler calls from its pacing idle loop so the FIFO never overruns
+ *   while a capture is in flight.  ana_adc_capture_finish() drains the
+ *   remainder, then demultiplexes the interleaved scratch buffer into the
+ *   per-channel raw buffers.
  *
- *   After the DMA completes the raw buffer is demultiplexed: each
- *   channel's samples are extracted and converted to millivolts using
- *   the voltage-divider-aware conversion factor, then stored in the
- *   per-channel float buffers.
- *
- *   This avoids:
- *     - Changing adc_select_input() while the ADC is running (Bug A)
- *     - FIFO overflow from free-running mode + slow software loop (Bug B)
- *     - Capturing channels that are not enabled (Bug C)
- *     - PulseView timeouts from a slow blocking software loop (Bug D)
+ *   err_in_fifo is kept enabled: if the CPU ever falls behind, bit 15 of
+ *   the stored sample flags the overrun instead of silently corrupting
+ *   the stream.
  *
  *******************************************************************/
 #include "adc.h"
 #include "log.h"
+#include "usb_util.h"
 
 #include <stdint.h>
 #include <hardware/adc.h>
-#include <hardware/dma.h>
 
 /*
  * ADC GPIO → hardware channel mapping for this board (RP2350B extended GPIO):
@@ -55,7 +52,7 @@ static const uint8_t SIGROK_CH_TO_GPIO[ADC_NUM_CHANNELS] = {
 
 static uint16_t adc_buf_raw[ADC_NUM_CHANNELS][ADC_BUF_SIZE];
 
-static uint16_t adc_dma_scratch[ADC_BUF_SIZE * ADC_NUM_CHANNELS];
+static uint16_t adc_scratch[ADC_BUF_SIZE * ADC_NUM_CHANNELS];
 
 struct ana_adc_module ana_adc = {
 	.module = {
@@ -65,7 +62,6 @@ struct ana_adc_module ana_adc = {
 		.mask      = 0x0000,
 	},
 	.clkdiv  = 0.0f,
-	.dma_chan = -1,
 	.raw     = {
 		adc_buf_raw[0],
 		adc_buf_raw[1],
@@ -82,8 +78,6 @@ void ana_adc_init(void)
 	}
 
 	adc_run(false);
-	ana_adc.dma_chan = dma_claim_unused_channel(true);
-	log_debug(ana_adc.module.name, "DMA channel: %d", ana_adc.dma_chan);
 }
 
 void ana_adc_set_clkdiv(float clkdiv)
@@ -120,17 +114,21 @@ float ana_adc_read(uint8_t channel)
 	return (float)(adc_read());
 }
 
-/* In-flight capture state shared between start/finish/abort. */
+/* In-flight capture state shared between start/kick/service/finish/abort. */
 static struct {
 	uint32_t samples;
+	uint32_t total_xfers;
+	uint32_t written;
 	uint8_t  analog_mask;
 	int      ch_order[ADC_NUM_CHANNELS];
 	int      active_cnt;
-	bool     running;
+	volatile bool armed;   /**< Configured, waiting for the kick */
+	volatile bool running; /**< Conversions started */
 } adc_capture;
 
 bool ana_adc_capture_start(uint32_t samples, uint8_t analog_mask)
 {
+	adc_capture.armed = false;
 	adc_capture.running = false;
 
 	if (samples == 0 || analog_mask == 0) {
@@ -162,49 +160,89 @@ bool ana_adc_capture_start(uint32_t samples, uint8_t analog_mask)
 
 	adc_capture.samples = samples;
 	adc_capture.analog_mask = analog_mask;
-
-	uint32_t total_xfers = samples * (uint32_t)adc_capture.active_cnt;
+	adc_capture.total_xfers = samples * (uint32_t)adc_capture.active_cnt;
+	adc_capture.written = 0;
 
 	adc_fifo_drain();
-	/* err_in_fifo=true: a FIFO overrun sets bit 15 of the stored sample,
-	 * so a high-rate overflow is detectable instead of silently corrupt.
-	 * Limited to 150KHz with 3 analog channels */
-	adc_fifo_setup(true, true, 1, true, false);
+	/* err_in_fifo=true: bit 15 of each stored sample flags a conversion
+	 * error. FIFO overrun is separate — the sticky FCS.OVER flag, cleared
+	 * here and checked in ana_adc_capture_finish(): an overrun drops
+	 * samples, which shifts the round-robin interleave and lands every
+	 * later sample on the wrong channel. */
+	hw_set_bits(&adc_hw->fcs, ADC_FCS_OVER_BITS | ADC_FCS_UNDER_BITS);
+	adc_fifo_setup(true, false, 1, true, false);
 	adc_set_round_robin(rr_hw_mask);
 	adc_select_input(adc_capture.ch_order[0]);
 
-	dma_channel_config cfg = dma_channel_get_default_config(ana_adc.dma_chan);
-	channel_config_set_read_increment(&cfg,  false);
-	channel_config_set_write_increment(&cfg, true);
-	channel_config_set_dreq(&cfg, DREQ_ADC);
-	channel_config_set_transfer_data_size(&cfg, DMA_SIZE_16);
-
-	dma_channel_configure(ana_adc.dma_chan, &cfg,
-			      adc_dma_scratch, &adc_hw->fifo, total_xfers, true);
-
-	adc_run(true);
-	adc_capture.running = true;
+	/* Do not start converting yet: the CPU is about to spend an unbounded
+	 * stretch sending the previous chunk over USB, and the 8-entry FIFO
+	 * would overrun (and slip the channel phase) before the sampler loop
+	 * begins draining it. ana_adc_capture_kick() starts the ADC at the
+	 * same instant the digital sampling loop opens. */
+	adc_capture.armed = true;
 
 	return true;
 }
 
-bool ana_adc_capture_finish(void)
+void ana_adc_capture_kick(void)
+{
+	if (!adc_capture.armed || adc_capture.running) {
+		return;
+	}
+
+	adc_run(true);
+	adc_capture.running = true;
+}
+
+void ana_adc_capture_service(void)
 {
 	if (!adc_capture.running) {
+		return;
+	}
+
+	while (adc_capture.written < adc_capture.total_xfers && !adc_fifo_is_empty()) {
+		adc_scratch[adc_capture.written] = adc_fifo_get();
+		adc_capture.written++;
+	}
+
+	if (adc_capture.written >= adc_capture.total_xfers) {
+		adc_run(false);
+	}
+}
+
+bool ana_adc_capture_finish(void)
+{
+	if (!adc_capture.armed) {
 		return true;
 	}
+
+	/* Safety net: if the digital sampler never ran (and so never kicked
+	 * the ADC), start it now so the drain below can complete. */
+	ana_adc_capture_kick();
+
+	while (adc_capture.written < adc_capture.total_xfers) {
+		ana_adc_capture_service();
+
+		if (!ana_usb_is_connected() || ana_usb_abort_requested()) {
+			ana_adc_capture_abort();
+			return false;
+		}
+	}
+
+	adc_capture.armed = false;
 	adc_capture.running = false;
-
-	dma_channel_wait_for_finish_blocking(ana_adc.dma_chan);
 	adc_run(false);
-	adc_fifo_drain();
 
-	bool overflow = false;
+	/* A FIFO overrun dropped samples: the round-robin interleave slipped
+	 * and the demux below would assign samples to the wrong channels. */
+	bool overflow = (adc_hw->fcs & ADC_FCS_OVER_BITS) != 0u;
+
+	adc_fifo_drain();
 
 	for (uint32_t s = 0; s < adc_capture.samples; s++) {
 		for (int c = 0; c < adc_capture.active_cnt; c++) {
-			uint16_t raw  = adc_dma_scratch[s * (uint32_t)adc_capture.active_cnt +
-							(uint32_t)c];
+			uint16_t raw  = adc_scratch[s * (uint32_t)adc_capture.active_cnt +
+						    (uint32_t)c];
 			int      hwch = adc_capture.ch_order[c];
 
 			if (raw & 0x8000u) {
@@ -235,13 +273,13 @@ bool ana_adc_capture_finish(void)
 
 void ana_adc_capture_abort(void)
 {
-	if (!adc_capture.running) {
+	if (!adc_capture.armed && !adc_capture.running) {
 		return;
 	}
+	adc_capture.armed = false;
 	adc_capture.running = false;
 
 	adc_run(false);
-	dma_channel_abort(ana_adc.dma_chan);
 	adc_fifo_drain();
 }
 

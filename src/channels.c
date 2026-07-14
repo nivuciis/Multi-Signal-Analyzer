@@ -3,26 +3,21 @@
  *
  * @brief Channel implementation program to digital channels
  * @author João Matheus Nascimento Dias (joao.dias@edge.ufal.br)
- * @version 0.1
+ * @version 0.2
  * @date 09/03/2026
  *
  * @copyright Copyright (c) 2026
  *
  *******************************************************************/
-#include "capture.pio.h"
 #include "channels.h"
 #include "debug.h"
 #include "module.h"
 #include "handles/sigrok_handler.h"
 
-#include <hardware/pio.h>
-
 #define MODULE_NAME "Channels"
 
-/* 2048-byte alignment required by the ping-pong DMA write-address ring
- * (see ana_module_pp_configure). */
-static uint16_t digital_channel_buffer_a[BUFFER_SIZE] __attribute__((aligned(2*BUFFER_SIZE)));
-static uint16_t digital_channel_buffer_b[BUFFER_SIZE] __attribute__((aligned(2*BUFFER_SIZE)));
+static uint16_t digital_channel_buffer_a[BUFFER_SIZE];
+static uint16_t digital_channel_buffer_b[BUFFER_SIZE];
 
 struct ana_module_system channels = {
 	.module =
@@ -32,24 +27,15 @@ struct ana_module_system channels = {
 			.pin_count = PICO_DEFAULT_CHANNELS_PIN_COUNT,
 			.mask = 0x0FFF, /**< Channels 0-11 (bits 0-11) */
 		},
-	.pio = {0},
-	.dma = {0},
+	.capture = {0},
+	.trigger = {0},
 };
 
-void ana_channels_init(PIO pio)
+void ana_channels_init(void)
 {
-	channels.pio.instance = pio;
-	channels.pio.pio_program = &capture_prog_simple_program;
-	channels.pio.get_default_cfg_func =
-		(pio_sm_config(*)(uint8_t))capture_prog_simple_program_get_default_config;
-	channels.pio.jmp_pin = 0xFF;
+	channels.capture.buffer = digital_channel_buffer_a;
 
-	channels.dma.dma_buffer = digital_channel_buffer_a;
-
-	ana_module_pio_init(&channels);
-	ana_module_dma_init(&channels);
-	ana_module_pingpong_init(&channels, digital_channel_buffer_a, digital_channel_buffer_b,
-				 BUFFER_SIZE);
+	ana_module_gpio_init(&channels);
 
 	return;
 }
@@ -61,26 +47,19 @@ struct ana_module_system *ana_channels_get_module(void)
 
 uint16_t *ana_channels_get_alt_buffer(void)
 {
-	return (channels.dma.dma_buffer == digital_channel_buffer_a)
+	return (channels.capture.buffer == digital_channel_buffer_a)
 		       ? digital_channel_buffer_b
 		       : digital_channel_buffer_a;
 }
 
 void ana_channels_load_simple(void)
 {
-	ana_module_pio_reload(&channels, &capture_prog_simple_program,
-			      (pio_sm_config(*)(uint8_t))capture_prog_simple_program_get_default_config,
-			      0xFF);
+	ana_module_clear_trigger(&channels);
 }
 
 void ana_channels_apply_trigger(void)
 {
 	struct sigrok_trigger *trigger = ana_sigrok_get_trigger();
-
-	const pio_program_t *prog = &capture_prog_simple_program;
-	pio_sm_config (*cfg_func)(uint8_t) =
-		(pio_sm_config(*)(uint8_t))capture_prog_simple_program_get_default_config;
-	uint8_t jmp_pin = 0xFF; /* sentinel: no jmp_pin (matches ana_module_pio_init check) */
 
 	int trig_ch = -1;
 	enum ana_trigger_type trig_type = ANA_TRIGGER_EDGE_RISE;
@@ -94,41 +73,10 @@ void ana_channels_apply_trigger(void)
 	}
 
 	if (trig_ch >= 0) {
-		jmp_pin = (uint8_t)(PICO_DEFAULT_CHANNELS_PIN_BASE + trig_ch);
-
-		switch (trig_type) {
-		case ANA_TRIGGER_EDGE_RISE:
-			prog = &capture_prog_trigger_rise_program;
-			cfg_func = (pio_sm_config(*)(
-				uint8_t))capture_prog_trigger_rise_program_get_default_config;
-			break;
-		case ANA_TRIGGER_EDGE_FALL:
-			prog = &capture_prog_trigger_fall_program;
-			cfg_func = (pio_sm_config(*)(
-				uint8_t))capture_prog_trigger_fall_program_get_default_config;
-			break;
-		case ANA_TRIGGER_EDGE_BOTH:
-			prog = &capture_prog_trigger_both_program;
-			cfg_func = (pio_sm_config(*)(
-				uint8_t))capture_prog_trigger_both_program_get_default_config;
-			break;
-		case ANA_TRIGGER_LEVEL_LOW:
-			prog = &capture_prog_trigger_low_level_program;
-			cfg_func = (pio_sm_config(*)(
-				uint8_t))capture_prog_trigger_low_level_program_get_default_config;
-			break;
-		case ANA_TRIGGER_LEVEL_HIGH:
-			prog = &capture_prog_trigger_high_level_program;
-			cfg_func = (pio_sm_config(*)(
-				uint8_t))capture_prog_trigger_high_level_program_get_default_config;
-			break;
-		default:
-			jmp_pin = 0xFF;
-			prog = &capture_prog_simple_program;
-			cfg_func = (pio_sm_config(*)(uint8_t))capture_prog_simple_program_get_default_config;
-			break;
-		}
+		ana_module_set_trigger(&channels,
+				       (uint8_t)(PICO_DEFAULT_CHANNELS_PIN_BASE + trig_ch),
+				       trig_type);
+	} else {
+		ana_module_clear_trigger(&channels);
 	}
-
-	ana_module_pio_reload(&channels, prog, cfg_func, jmp_pin);
 }

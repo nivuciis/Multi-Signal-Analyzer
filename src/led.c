@@ -3,13 +3,12 @@
  *
  * @brief Led control commands
  * @author João Matheus Nascimento Dias (joao.dias@edge.ufal.br)
- * @version 0.1
+ * @version 0.2
  * @date 07/01/2026
  *
  * @copyright Copyright (c) 2025
  *
  *******************************************************************/
-#include "blink.pio.h"
 #include "led.h"
 #include "log.h"
 #include "macros.h"
@@ -17,36 +16,33 @@
 #include <stdio.h>
 
 #include <hardware/gpio.h>
-#include <hardware/pio.h>
+#include <pico/time.h>
 
 #define LED_MODULE "led"
 
 #define MSG_INVALID_STATUS "Invalid LED status!\n"
 
-/**
- *  The state machine and PIO instance used for LED control
- *  Fourth state machine of 3rd pio block
- */
-static PIO pio_instance = pio2;
-static uint sm = 3;
+/** Half-period of the capturing blink (matches the old PIO blink rate). */
+#define LED_BLINK_HALF_PERIOD_MS 200
+
 static enum led_status current_status = LED_STATUS_OFF;
+static struct repeating_timer blink_timer;
 
-static void set_led_pin_to_sio(void)
+/* Toggles the USB LED while capturing; runs from the alarm pool on the core
+ * that called ana_led_init() (Core 0), so it keeps blinking while Core 1 is
+ * busy inside the CPU sampling loop. */
+static bool led_blink_cb(struct repeating_timer *rt)
 {
-	gpio_set_function(LED_USB_PIN, GPIO_FUNC_SIO);
-	return;
-}
+	(void)rt;
 
-static void set_led_pin_to_pio(void)
-{
-	pio_gpio_init(pio_instance, LED_USB_PIN);
-	return;
+	if (current_status == LED_STATUS_CAPTURING) {
+		gpio_xor_mask(1u << LED_USB_PIN);
+	}
+	return true;
 }
 
 static void led_reset(void)
 {
-	pio_sm_set_enabled(pio_instance, sm, false);
-	set_led_pin_to_sio();
 	gpio_put(LED_BLINK_PIN, 0);
 	gpio_put(LED_USB_PIN, 0);
 	return;
@@ -54,8 +50,6 @@ static void led_reset(void)
 
 static void led_connected(void)
 {
-	pio_sm_set_enabled(pio_instance, sm, false);
-	set_led_pin_to_sio();
 	gpio_put(LED_BLINK_PIN, 0);
 	gpio_put(LED_USB_PIN, 1);
 	return;
@@ -63,9 +57,7 @@ static void led_connected(void)
 
 static void led_capturing(void)
 {
-	set_led_pin_to_pio();
 	gpio_put(LED_BLINK_PIN, 1);
-	pio_sm_set_enabled(pio_instance, sm, true);
 	return;
 }
 
@@ -75,17 +67,11 @@ void ana_led_init(void)
 
 	gpio_init(LED_USB_PIN);
 	gpio_set_dir(LED_USB_PIN, GPIO_OUT);
-	gpio_set_function(LED_USB_PIN, GPIO_FUNC_SIO);
 
 	gpio_init(LED_BLINK_PIN);
 	gpio_set_dir(LED_BLINK_PIN, GPIO_OUT);
-	gpio_set_function(LED_BLINK_PIN, GPIO_FUNC_SIO);
-	uint offset = pio_add_program(pio_instance, &blink_gated_program);
-	blink_gated_program_init(pio_instance, sm, offset, LED_USB_PIN, LED_BLINK_PIN);
-	gpio_set_function(LED_BLINK_PIN, GPIO_FUNC_SIO);
 
-	pio_sm_put_blocking(pio_instance, sm, 30000000);
-	pio_sm_set_enabled(pio_instance, sm, true);
+	add_repeating_timer_ms(LED_BLINK_HALF_PERIOD_MS, led_blink_cb, NULL, &blink_timer);
 
 	ana_led_set_status(LED_STATUS_CONNECTED);
 }

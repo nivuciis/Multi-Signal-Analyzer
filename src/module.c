@@ -1,284 +1,271 @@
 /*******************************************************************
  * @file module.c
- * @brief Module implementation
+ * @brief Module implementation — CPU/GPIO sampling
  *
  * @author João Matheus Nascimento Dias (joao.dias@edge.ufal.br)
- * @version 0.1
+ * @version 0.2
  * @date 04/02/2026
  *
  * @copyright Copyright (c) 2026
  *
  *******************************************************************/
+#include "adc.h"
 #include "handles/sigrok_handler.h"
 #include "log.h"
 #include "module.h"
+#include "usb_util.h"
 
 #include <stdint.h>
 
-#include <hardware/dma.h>
-#include <hardware/pio.h>
+#include <hardware/structs/sio.h>
+#include <hardware/structs/systick.h>
 
-/*
- * Chained ping-pong capture
- * --------------------------
- * Two DMA channels (A = instance, B = instance_b) each drain the PIO RX FIFO
- * into their own buffer and chain to the other on completion, so the PIO never
- * stalls and the sample stream is gap-free. A DMA_IRQ_0 handler recycles the
- * finished channel (resets write addr + transfer count, non-triggering, so it
- * is ready when its partner chains back) and bumps pp_produced. Core 1 reads
- * pp_produced/pp_consumed to know which buffer is ready, and pp_overflow flags
- * the producer lapping the consumer (USB too slow → soft overflow).
- */
-#define ANA_PP_MAX_MODULES 3
-static struct ana_module_system *pp_modules[ANA_PP_MAX_MODULES];
-static int pp_module_count;
-static bool pp_irq_installed;
 
-void ana_module_pio_init(struct ana_module_system *config)
+#define ANA_MAX_MODULES      3
+#define ABORT_CHECK_INTERVAL 64u
+#define SYSTICK_MASK         0x00FFFFFFu
+
+static struct ana_module_system *modules[ANA_MAX_MODULES];
+static int module_count;
+
+/** Cycles of clk_sys per sample, Q8 fixed point (shared by all modules). */
+static uint32_t cycles_per_sample_q8;
+
+void ana_module_gpio_init(struct ana_module_system *config)
 {
-	log_debug(config->module.name, "Initializing PIO...");
-
-	struct pulseview_sample_config *cfg = ana_sigrok_get_sample_config();
-	int pin;
-
-	config->pio.sm = pio_claim_unused_sm(config->pio.instance, true);
-	config->dma.has_complete = false;
-
-	pio_sm_set_enabled(config->pio.instance, config->pio.sm, false);
-	config->pio.pio_offset = pio_add_program(config->pio.instance, config->pio.pio_program);
-	pio_sm_config sm_cfg = config->pio.get_default_cfg_func(config->pio.pio_offset);
+	log_debug(config->module.name, "Initializing GPIO...");
 
 	for (int i = 0; i < config->module.pin_count; i++) {
-		pin = config->module.pin_base + i;
-		pio_gpio_init(config->pio.instance, pin);
+		int pin = config->module.pin_base + i;
+		gpio_init(pin);
+		gpio_set_dir(pin, GPIO_IN);
 		gpio_pull_down(pin);
 	}
 
-	pio_sm_set_consecutive_pindirs(config->pio.instance, config->pio.sm,
-				       config->module.pin_base, config->module.pin_count, false);
-	sm_config_set_in_pins(&sm_cfg, config->module.pin_base);
-	/* Autopush after exactly pin_count bits so the PIO needs a single
-	 * `in pins,N` per sample (1 PIO clock). A padding `in null` to reach a
-	 * fixed 16-bit threshold would cost a second clock and halve the real
-	 * sample rate (and cap it at 60 MS/s instead of 120, for example). */
-	sm_config_set_in_shift(&sm_cfg, false, true, config->module.pin_count);
+	config->capture.pending = false;
+	config->capture.has_complete = false;
+	config->trigger.enabled = false;
 
-	float clkdiv = clock_get_hz(clk_sys) / (float)cfg->sample_rate_hz;
-	sm_config_set_clkdiv(&sm_cfg, clkdiv);
-
-	sm_config_set_fifo_join(&sm_cfg, PIO_FIFO_JOIN_RX);
-
-	if (config->pio.jmp_pin != 0xFF) {
-		sm_config_set_jmp_pin(&sm_cfg, config->pio.jmp_pin);
+	if (module_count >= ANA_MAX_MODULES) {
+		log_err(config->module.name, "Too many capture modules");
+		return;
 	}
-
-	pio_sm_init(config->pio.instance, config->pio.sm, config->pio.pio_offset, &sm_cfg);
-	pio_sm_clear_fifos(config->pio.instance, config->pio.sm);
-	pio_sm_set_enabled(config->pio.instance, config->pio.sm, false);
-}
-
-void ana_module_dma_init(struct ana_module_system *config)
-{
-	log_debug(config->module.name, "Initializing DMA...");
-
-	config->dma.instance = dma_claim_unused_channel(true);
-
-	config->dma.instance_cfg = dma_channel_get_default_config(config->dma.instance);
-	channel_config_set_read_increment(&config->dma.instance_cfg, false);
-	channel_config_set_write_increment(&config->dma.instance_cfg, true);
-	channel_config_set_transfer_data_size(&config->dma.instance_cfg, DMA_SIZE_16);
-	channel_config_set_dreq(&config->dma.instance_cfg,
-				pio_get_dreq(config->pio.instance, config->pio.sm, false));
-}
-
-void ana_module_pio_dma_start(struct ana_module_system *config)
-{
-	struct pulseview_sample_config *cfg = ana_sigrok_get_sample_config();
-
-	config->dma.has_complete = false;
-
-	pio_sm_set_enabled(config->pio.instance, config->pio.sm, false);
-	pio_sm_clear_fifos(config->pio.instance, config->pio.sm);
-	pio_sm_restart(config->pio.instance, config->pio.sm);
-	pio_sm_exec(config->pio.instance, config->pio.sm, pio_encode_jmp(config->pio.pio_offset));
-
-	dma_channel_configure(config->dma.instance, &config->dma.instance_cfg,
-			      config->dma.dma_buffer, &config->pio.instance->rxf[config->pio.sm],
-			      cfg->samples, false);
-
-	dma_channel_start(config->dma.instance);
-	pio_sm_set_enabled(config->pio.instance, config->pio.sm, true);
-}
-
-void ana_module_pio_dma_wait(struct ana_module_system *config)
-{
-	dma_channel_wait_for_finish_blocking(config->dma.instance);
-
-	config->dma.has_complete = true;
-}
-
-bool ana_module_pio_dma_is_busy(struct ana_module_system *config)
-{
-	return dma_channel_is_busy(config->dma.instance);
-}
-
-void ana_module_pio_dma_abort(struct ana_module_system *config)
-{
-	pio_sm_set_enabled(config->pio.instance, config->pio.sm, false);
-	dma_channel_abort(config->dma.instance);
-
-	config->dma.has_complete = true;
+	modules[module_count] = config;
+	module_count++;
 }
 
 void ana_module_set_sample_rate(struct ana_module_system *config)
 {
+	(void)config;
 	struct pulseview_sample_config *cfg = ana_sigrok_get_sample_config();
-	float clkdiv = clock_get_hz(clk_sys) / (float)cfg->sample_rate_hz;
-	pio_sm_set_clkdiv(config->pio.instance, config->pio.sm, clkdiv);
+
+	cycles_per_sample_q8 =
+		(uint32_t)(((uint64_t)clock_get_hz(clk_sys) << 8) / cfg->sample_rate_hz);
 }
 
-static void ana_module_pp_disarm_final_chain(struct ana_module_system *m)
+void ana_module_set_trigger(struct ana_module_system *config, uint8_t gpio,
+			    enum ana_trigger_type type)
 {
-	uint8_t final_chan =
-		((m->dma.pp_target - 1u) & 1u) ? m->dma.instance_b : m->dma.instance;
-	hw_write_masked(&dma_hw->ch[final_chan].al1_ctrl,
-			(uint32_t)final_chan << DMA_CH0_CTRL_TRIG_CHAIN_TO_LSB,
-			DMA_CH0_CTRL_TRIG_CHAIN_TO_BITS);
+	config->trigger.gpio = gpio;
+	config->trigger.type = type;
+	config->trigger.enabled = true;
 }
 
-inline static void ana_module_verify_pp_irq(struct ana_module_system *m, uint8_t instance)
+void ana_module_clear_trigger(struct ana_module_system *config)
 {
-	struct ana_module_dma *dma = &m->dma;
+	config->trigger.enabled = false;
+}
 
-	if (!dma_channel_get_irq0_status(instance)) {
-		return;
-	}
-	dma_channel_acknowledge_irq0(instance);
-	dma->pp_produced++;
+void ana_module_capture_arm(struct ana_module_system *config)
+{
+	config->capture.pending = true;
+	config->capture.has_complete = false;
+}
 
-	if (dma->pp_target != 0u) {
-		if (dma->pp_produced + 1u == dma->pp_target) {
-			ana_module_pp_disarm_final_chain(m);
+bool ana_module_capture_is_busy(struct ana_module_system *config)
+{
+	return config->capture.pending && !config->capture.has_complete;
+}
+
+void ana_module_capture_abort(struct ana_module_system *config)
+{
+	config->capture.pending = false;
+	config->capture.has_complete = true;
+}
+
+static inline bool sampler_aborted(void)
+{
+	return !ana_usb_is_connected() || ana_usb_abort_requested();
+}
+
+/** Poll the trigger GPIO until the condition matches. False on abort. */
+static bool trigger_wait(const struct ana_module_trigger *trig)
+{
+	uint32_t check = 0;
+	bool prev = gpio_get(trig->gpio);
+
+	while (true) {
+		check++;
+		if (check >= ABORT_CHECK_INTERVAL) {
+			check = 0;
+			ana_adc_capture_service();
+			if (sampler_aborted()) {
+				return false;
+			}
 		}
-		if (dma->pp_produced >= dma->pp_target) {
-			pio_sm_set_enabled(m->pio.instance, m->pio.sm, false);
-			return;
+
+		bool cur = gpio_get(trig->gpio);
+
+		switch (trig->type) {
+		case ANA_TRIGGER_LEVEL_LOW:
+			if (!cur) {
+				return true;
+			}
+			break;
+		case ANA_TRIGGER_LEVEL_HIGH:
+			if (cur) {
+				return true;
+			}
+			break;
+		case ANA_TRIGGER_EDGE_RISE:
+			if (!prev && cur) {
+				return true;
+			}
+			break;
+		case ANA_TRIGGER_EDGE_FALL:
+			if (prev && !cur) {
+				return true;
+			}
+			break;
+		case ANA_TRIGGER_EDGE_BOTH:
+			if (prev != cur) {
+				return true;
+			}
+			break;
+		default:
+			return true;
+		}
+
+		prev = cur;
+	}
+}
+
+static inline void systick_setup(void)
+{
+	systick_hw->csr = 0x5; /* enable, clocked from clk_sys */
+	systick_hw->rvr = SYSTICK_MASK;
+	systick_hw->cvr = 0;
+}
+
+/** Cycles elapsed since *prev (SysTick counts down, 24-bit wrap). */
+static inline uint32_t systick_elapsed(uint32_t *prev)
+{
+	uint32_t cur = systick_hw->cvr;
+	uint32_t delta = (*prev - cur) & SYSTICK_MASK;
+	*prev = cur;
+	return delta;
+}
+
+/**
+ * @brief Run one capture for every armed module.
+ *
+ * Fills cfg->samples entries of each armed module's buffer with the GPIO
+ * word shifted to pin_base and masked to the module's pin mask.
+ *
+ * @return false if aborted mid-capture (armed state left for the caller to
+ * clear via ana_module_capture_abort()).
+ */
+static bool cpu_sampler_run(void)
+{
+	struct pulseview_sample_config *cfg = ana_sigrok_get_sample_config();
+
+	uint16_t *bufs[ANA_MAX_MODULES];
+	uint8_t shifts[ANA_MAX_MODULES];
+	uint16_t masks[ANA_MAX_MODULES];
+	int n_active = 0;
+
+	for (int i = 0; i < module_count; i++) {
+		struct ana_module_system *m = modules[i];
+
+		if (!m->capture.pending || m->capture.buffer == NULL) {
+			continue;
+		}
+		bufs[n_active] = m->capture.buffer;
+		shifts[n_active] = m->module.pin_base;
+		masks[n_active] = m->module.mask;
+		n_active++;
+	}
+
+	if (n_active == 0) {
+		return true;
+	}
+
+	for (int i = 0; i < module_count; i++) {
+		struct ana_module_system *m = modules[i];
+
+		if (m->capture.pending && m->trigger.enabled) {
+			if (!trigger_wait(&m->trigger)) {
+				return false;
+			}
 		}
 	}
-	if (dma->pp_produced - dma->pp_consumed >= 2u) {
-		dma->pp_overflow = true;
-	}
-}
 
-/* The channels recycle themselves in hardware: the write-address ring wraps
- * back to the buffer base and TRANS_COUNT reloads on every chain trigger, so
- * this handler only has to account for produced buffers. Reprogramming the
- * channel here would race the partner's chain re-trigger at high rates. */
-static void ana_module_pp_irq(void)
-{
-	for (int i = 0; i < pp_module_count; i++) {
-		struct ana_module_system *m = pp_modules[i];
+	uint32_t samples = cfg->samples;
+	uint32_t step_q8 = cycles_per_sample_q8;
+	uint32_t acc_q8 = 0;
+	uint32_t prev;
 
-		ana_module_verify_pp_irq(m, m->dma.instance);
-		ana_module_verify_pp_irq(m, m->dma.instance_b);
-	}
-}
+	/* Open the analog window together with the digital one: the ADC was
+	 * only armed at capture start (starting it earlier would overrun its
+	 * 8-entry FIFO and slip the round-robin channel phase). */
+	ana_adc_capture_kick();
 
-void ana_module_pingpong_init(struct ana_module_system *config, uint16_t *buf_a, uint16_t *buf_b,
-			      uint32_t chunk)
-{
-	config->dma.buf_a = buf_a;
-	config->dma.buf_b = buf_b;
-	config->dma.pp_chunk = chunk;
-	config->dma.pp_target = 0;
+	systick_setup();
+	prev = systick_hw->cvr;
 
-	if (pp_module_count >= ANA_PP_MAX_MODULES) {
-		log_err(config->module.name, "Too many ping-pong modules");
-		return;
-	}
+	for (uint32_t s = 0; s < samples; s++) {
+		/* Idle wait between samples doubles as the ADC FIFO drain
+		 * window: the 8-entry FIFO would overrun while the CPU is
+		 * stuck in this loop otherwise. */
+		while (acc_q8 < step_q8) {
+			ana_adc_capture_service();
+			acc_q8 += systick_elapsed(&prev) << 8;
+		}
+		acc_q8 -= step_q8;
 
-	config->dma.instance_b = (uint8_t)dma_claim_unused_channel(true);
+		uint32_t word = sio_hw->gpio_in;
 
-	pp_modules[pp_module_count] = config;
-	pp_module_count++;
-}
+		for (int m = 0; m < n_active; m++) {
+			bufs[m][s] = (uint16_t)((word >> shifts[m]) & masks[m]);
+		}
 
-static void ana_module_pp_configure(struct ana_module_system *config, uint8_t chan,
-				    uint8_t chain_to, uint16_t *buf)
-{
-	dma_channel_config c = dma_channel_get_default_config(chan);
-	channel_config_set_read_increment(&c, false);
-	channel_config_set_write_increment(&c, true);
-	channel_config_set_transfer_data_size(&c, DMA_SIZE_16);
-	channel_config_set_dreq(&c, pio_get_dreq(config->pio.instance, config->pio.sm, false));
-	channel_config_set_chain_to(&c, chain_to);
-	/* Hardware write-address ring: the address can never leave the buffer,
-	 * even if the partner's chain re-triggers this channel before the IRQ
-	 * handler runs. Requires pp_chunk * sizeof(uint16_t) to be a power of
-	 * two and the buffers aligned to that size. */
-	channel_config_set_ring(&c, true,
-				(uint)__builtin_ctz(config->dma.pp_chunk * sizeof(uint16_t)));
-
-	dma_channel_configure(chan, &c, buf, &config->pio.instance->rxf[config->pio.sm],
-			      config->dma.pp_chunk, false);
-	dma_channel_acknowledge_irq0(chan); /* drop stale status from a prior run */
-	dma_channel_set_irq0_enabled(chan, true);
-}
-
-void ana_module_pingpong_start(struct ana_module_system *config)
-{
-	config->dma.pp_produced = 0;
-	config->dma.pp_consumed = 0;
-	config->dma.pp_overflow = false;
-
-	/* Single-buffer capture: channel A must not chain at all — B would
-	 * eventually chain back and overwrite buffer A mid-send. */
-	uint8_t chain_a = (config->dma.pp_target == 1u) ? config->dma.instance
-							: config->dma.instance_b;
-
-	ana_module_pp_configure(config, config->dma.instance, chain_a, config->dma.buf_a);
-	ana_module_pp_configure(config, config->dma.instance_b, config->dma.instance,
-				config->dma.buf_b);
-
-	if (!pp_irq_installed) {
-		irq_set_exclusive_handler(DMA_IRQ_0, ana_module_pp_irq);
-		irq_set_enabled(DMA_IRQ_0, true);
-		pp_irq_installed = true;
+		if ((s & (ABORT_CHECK_INTERVAL - 1u)) == 0u) {
+			ana_adc_capture_service();
+			if (sampler_aborted()) {
+				return false;
+			}
+		}
 	}
 
-	pio_sm_set_enabled(config->pio.instance, config->pio.sm, false);
-	pio_sm_clear_fifos(config->pio.instance, config->pio.sm);
-	pio_sm_restart(config->pio.instance, config->pio.sm);
-	pio_sm_exec(config->pio.instance, config->pio.sm, pio_encode_jmp(config->pio.pio_offset));
+	for (int i = 0; i < module_count; i++) {
+		struct ana_module_system *m = modules[i];
 
-	/* Start channel A only; B is launched by the chain when A completes. */
-	dma_channel_start(config->dma.instance);
-	pio_sm_set_enabled(config->pio.instance, config->pio.sm, true);
+		if (m->capture.pending) {
+			m->capture.pending = false;
+			m->capture.has_complete = true;
+		}
+	}
+
+	return true;
 }
 
-void ana_module_pingpong_stop(struct ana_module_system *config)
+bool ana_module_capture_wait(struct ana_module_system *config)
 {
-	config->dma.pp_target = 0;
-	pio_sm_set_enabled(config->pio.instance, config->pio.sm, false);
-	dma_channel_set_irq0_enabled(config->dma.instance, false);
-	dma_channel_set_irq0_enabled(config->dma.instance_b, false);
-	dma_channel_abort(config->dma.instance);
-	dma_channel_abort(config->dma.instance_b);
-}
+	if (config->capture.pending) {
+		if (!cpu_sampler_run()) {
+			return false;
+		}
+	}
 
-void ana_module_pio_reload(struct ana_module_system *config, const pio_program_t *new_program,
-			   pio_sm_config (*new_cfg_func)(uint8_t offset), uint8_t jmp_pin)
-{
-	pio_sm_set_enabled(config->pio.instance, config->pio.sm, false);
-	pio_remove_program_and_unclaim_sm(config->pio.pio_program, config->pio.instance,
-					  config->pio.sm, config->pio.pio_offset);
-
-	config->pio.pio_program = new_program;
-	config->pio.get_default_cfg_func = new_cfg_func;
-	config->pio.jmp_pin = jmp_pin;
-
-	ana_module_pio_init(config);
-
-	channel_config_set_dreq(&config->dma.instance_cfg,
-				pio_get_dreq(config->pio.instance, config->pio.sm, false));
+	return config->capture.has_complete;
 }

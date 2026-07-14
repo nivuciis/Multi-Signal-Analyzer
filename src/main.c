@@ -79,9 +79,9 @@ int main(void)
 	ana_led_init();
 	tusb_init();
 	ana_sigrok_handle_init();
-	ana_channels_init(pio0);
-	ana_rs485_init(pio1);
-	ana_rs232_init(pio2);
+	ana_channels_init();
+	ana_rs485_init();
+	ana_rs232_init();
 	ana_adc_init();
 
 	multicore_launch_core1(ana_core1_entry);

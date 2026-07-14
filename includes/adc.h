@@ -18,7 +18,6 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <hardware/adc.h>
-#include <hardware/dma.h>
 
 /**
  * @brief Raw 12-bit ADC buffers, one per sigrok analog channel (index 0–2).
@@ -34,7 +33,6 @@
 struct ana_adc_module {
 	struct ana_module_config const module;
 	float    clkdiv;
-	int      dma_chan;
 	uint16_t *raw[ADC_NUM_CHANNELS]; /**< raw[ch][sample] — 12-bit values */
 };
 
@@ -68,11 +66,15 @@ void ana_adc_set_rate(uint32_t sample_rate_hz);
 float ana_adc_read(uint8_t channel);
 
 /**
- * @brief Arm and start a DMA round-robin capture for all enabled channels.
+ * @brief Arm and start a CPU round-robin capture for all enabled channels.
  *
- * Non-blocking: configures the FIFO/round-robin, arms the DMA and starts the
- * ADC, then returns. Call alongside the digital capture start so the analog
- * window opens at the same instant as the digital one.
+ * Non-blocking: configures the FIFO/round-robin and arms the capture, then
+ * returns. Conversions only start at ana_adc_capture_kick(), issued by the
+ * digital CPU sampler when its loop opens, so the analog window aligns with
+ * the digital one and the FIFO never overruns while the CPU is busy
+ * elsewhere. While the capture is in flight, ana_adc_capture_service() must
+ * be called often enough to keep the 8-entry FIFO from overrunning (the
+ * digital CPU sampler does this from its pacing idle loop).
  *
  * @param samples     Samples per enabled channel (capped to ADC_BUF_SIZE).
  * @param analog_mask Sigrok bitmask: bit 0 = ch0 (GPIO 47), bit 1 = ch1 (GPIO 46),
@@ -82,17 +84,35 @@ float ana_adc_read(uint8_t channel);
 bool ana_adc_capture_start(uint32_t samples, uint8_t analog_mask);
 
 /**
+ * @brief Start the conversions armed by ana_adc_capture_start().
+ *
+ * Called by the digital CPU sampler at the instant its sampling loop opens,
+ * so the analog and digital windows align and the FIFO is drained from the
+ * first conversion on. No-op if not armed or already running.
+ */
+void ana_adc_capture_kick(void);
+
+/**
+ * @brief Drain any pending ADC FIFO entries into the capture buffer.
+ *
+ * Non-blocking; no-op when no capture is in flight. Call from tight loops
+ * that run while an analog capture is active.
+ */
+void ana_adc_capture_service(void);
+
+/**
  * @brief Wait for the capture started by ana_adc_capture_start() and demux it.
  *
- * Blocks until the DMA completes, then fills raw[ch][0..samples-1] with
- * 12-bit values. No-op if no capture is in flight.
+ * Drains the remaining samples with the CPU, then fills raw[ch][0..samples-1]
+ * with 12-bit values. No-op if no capture is in flight.
  *
- * @return bool true on success, false if a FIFO overflow was detected.
+ * @return bool true on success, false if a FIFO overflow was detected or the
+ *              capture was aborted.
  */
 bool ana_adc_capture_finish(void);
 
 /**
- * @brief Abort an in-flight ADC capture (stop ADC, abort DMA, drain FIFO).
+ * @brief Abort an in-flight ADC capture (stop ADC, drain FIFO).
  */
 void ana_adc_capture_abort(void);
 

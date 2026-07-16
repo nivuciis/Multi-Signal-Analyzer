@@ -29,11 +29,14 @@
 
 #define CAPTURE_CHUNK_SIZE 1024U
 
-/* digital_mask bits per capture module (see merge_digital_sample) */
-#define DIGITAL_MASK_CHANNELS 0x0FFFu     /* channels 0-11  */
-#define DIGITAL_MASK_RS485    (1u << 12)  /* channel 12     */
-#define DIGITAL_MASK_RS232    (3u << 13)  /* channels 13-14 */
+/* Max repeats encodable by a single coarse RLE byte (0x7F = 78 + 49 → 49 * 32
+ * repeats). */
+#define RLE_MAX_COARSE_REPEATS (49u * 32u)
 
+/* digital_mask bits per capture module (see merge_digital_sample) */
+#define DIGITAL_MASK_CHANNELS 0x0FFFu    /* channels 0-11  */
+#define DIGITAL_MASK_RS485    (1u << 12) /* channel 12     */
+#define DIGITAL_MASK_RS232    (3u << 13) /* channels 13-14 */
 
 static struct sigrok_handler self = {
 	.num_samples = 1024,
@@ -161,7 +164,7 @@ static inline bool tx_reserve(struct tx_stream *tx, uint32_t needed)
  *             GPIO24 (pin_base+0) = channel 13, GPIO25 (pin_base+1) = channel 14
  */
 static inline uint16_t merge_digital_sample(uint16_t ch_word, uint16_t rs485_word,
-					     uint16_t rs232_word)
+					    uint16_t rs232_word)
 {
 	uint16_t ch_bits = (uint16_t)(ch_word & 0x0FFFu);
 	uint16_t rs485_bit = (uint16_t)(rs485_word & 0x0001u);
@@ -194,10 +197,9 @@ static bool ana_send_packet_channels(const uint16_t *dig_buf, const uint16_t *rs
 
 		for (uint32_t s = 0; s < chunk_samples; s++) {
 
-			uint16_t sample =
-				(uint16_t)(merge_digital_sample(dig_buf[s], rs485_buf[s],
-								rs232_buf[s]) &
-					   self.digital_mask);
+			uint16_t sample = (uint16_t)(merge_digital_sample(dig_buf[s], rs485_buf[s],
+									  rs232_buf[s]) &
+						     self.digital_mask);
 
 			uint32_t needed = self.tx.bytes_per_dig_sample + active_analog_count;
 
@@ -248,7 +250,7 @@ static bool ana_send_packet_channels(const uint16_t *dig_buf, const uint16_t *rs
 
 	while (i < chunk_samples) {
 
-		cur = (uint16_t)(merge_digital_sample(dig_buf[i], rs485_buf[i], rs232_buf[i]) &
+		cur = (uint16_t)(merge_digital_sample(dig_buf[i], crs485_buf[i], rs232_buf[i]) &
 				 self.digital_mask);
 
 		run = 1;
@@ -259,10 +261,9 @@ static bool ana_send_packet_channels(const uint16_t *dig_buf, const uint16_t *rs
 			run++;
 		}
 
-		/* Worst-case RLE bytes for this run: one coarse byte per 1568
-		 * repeats, plus at most one partial coarse and one fine byte. */
 		repeats = run - 1u;
-		if (!tx_reserve(&tx, self.tx.bytes_per_dig_sample + repeats / 1568u + 2u)) {
+		if (!tx_reserve(&tx, self.tx.bytes_per_dig_sample +
+					     repeats / RLE_MAX_COARSE_REPEATS + 2u)) {
 			return false;
 		}
 
@@ -343,6 +344,7 @@ static bool capture_chunks(struct ana_module_system *config, uint32_t n_samples,
 			ana_module_set_sample_rate(rs232_mod);
 			memset(buf_rs232[cap_idx], 0, chunk * sizeof(uint16_t));
 		}
+
 		ana_capture_data_start(config);
 		if (rs485_on) {
 			ana_capture_data_start(rs485_mod);

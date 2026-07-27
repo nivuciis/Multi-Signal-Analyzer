@@ -81,6 +81,28 @@ static inline bool module_active(uint16_t module_mask)
 	return (self.digital_mask & module_mask) != 0u;
 }
 
+static void apply_triggers_all(uint16_t mask)
+{
+	ana_apply_triggers(ana_channels_get_module(), mask);
+	if (module_active(DIGITAL_MASK_RS485)) {
+		ana_apply_triggers(ana_rs485_get_module(), mask);
+	}
+	if (module_active(DIGITAL_MASK_RS232)) {
+		ana_apply_triggers(ana_rs232_get_module(), mask);
+	}
+}
+
+static void load_simple_all(void)
+{
+	ana_load_simple_program(ana_channels_get_module());
+	if (module_active(DIGITAL_MASK_RS485)) {
+		ana_load_simple_program(ana_rs485_get_module());
+	}
+	if (module_active(DIGITAL_MASK_RS232)) {
+		ana_load_simple_program(ana_rs232_get_module());
+	}
+}
+
 void ana_send_response(const char *str)
 {
 	if (!ana_usb_is_connected()) {
@@ -112,7 +134,13 @@ static void tx_init(void)
 		}
 	}
 
-	self.tx.bytes_per_dig_sample = (highest < 0) ? 0 : (highest < 7) ? 1 : 2;
+	/* The srpico wire format carries 7 digital bits per byte (bit 7 is the
+	 * data-byte marker), and the driver consumes one byte for every group of
+	 * 7 channels that holds at least one enabled channel (api.c
+	 * config_commit / protocol.c process_slice). The driver also rejects
+	 * non-contiguous digital masks, so the enabled set is always D0..Dhighest
+	 * and the byte count is exactly ceil((highest + 1) / 7). */
+	self.tx.bytes_per_dig_sample = (highest < 0) ? 0 : (uint32_t)(highest / 7) + 1u;
 	self.digital_bits_per_transfer = self.tx.bytes_per_dig_sample;
 	self.tx.active_analog_ch = ana_capture_data_get_analog_channels_count(self.analog_mask);
 	self.tx.bytes_per_sample = self.tx.bytes_per_dig_sample + self.tx.active_analog_ch;
@@ -144,6 +172,16 @@ static inline bool tx_flush(struct tx_stream *tx)
 	tx->idx = 0;
 
 	return true;
+}
+
+/* Emit one digital sample as bytes_per_dig_sample marker bytes, 7 bits each,
+ * least-significant group first (the order process_slice rebuilds cword in). */
+static inline void tx_put_digital(struct tx_stream *tx, uint16_t sample)
+{
+	for (uint32_t b = 0; b < self.tx.bytes_per_dig_sample; b++) {
+		self.tx.buf[tx->idx] = (uint8_t)(0x80u | ((sample >> (7u * b)) & 0x7Fu));
+		tx->idx++;
+	}
 }
 
 static inline bool tx_reserve(struct tx_stream *tx, uint32_t needed)
@@ -207,15 +245,7 @@ static bool ana_send_packet_channels(const uint16_t *dig_buf, const uint16_t *rs
 				return false;
 			}
 
-			if (self.tx.bytes_per_dig_sample >= 1) {
-				self.tx.buf[tx.idx] = (uint8_t)(0x80u | (sample & 0x7Fu));
-				tx.idx++;
-			}
-
-			if (self.tx.bytes_per_dig_sample >= 2) {
-				self.tx.buf[tx.idx] = (uint8_t)(0x80u | ((sample >> 7) & 0x7Fu));
-				tx.idx++;
-			}
+			tx_put_digital(&tx, sample);
 
 			for (uint8_t ch = 0; ch < active_analog_count; ch++) {
 
@@ -250,7 +280,7 @@ static bool ana_send_packet_channels(const uint16_t *dig_buf, const uint16_t *rs
 
 	while (i < chunk_samples) {
 
-		cur = (uint16_t)(merge_digital_sample(dig_buf[i], crs485_buf[i], rs232_buf[i]) &
+		cur = (uint16_t)(merge_digital_sample(dig_buf[i], rs485_buf[i], rs232_buf[i]) &
 				 self.digital_mask);
 
 		run = 1;
@@ -267,15 +297,7 @@ static bool ana_send_packet_channels(const uint16_t *dig_buf, const uint16_t *rs
 			return false;
 		}
 
-		if (self.tx.bytes_per_dig_sample >= 1) {
-			self.tx.buf[tx.idx] = (uint8_t)(0x80u | (cur & 0x7Fu));
-			tx.idx++;
-		}
-
-		if (self.tx.bytes_per_dig_sample >= 2) {
-			self.tx.buf[tx.idx] = (uint8_t)(0x80u | ((cur >> 7) & 0x7Fu));
-			tx.idx++;
-		}
+		tx_put_digital(&tx, cur);
 
 		while (repeats >= 64u) {
 			mult = repeats / 32u;
@@ -553,7 +575,7 @@ void run_capture(bool continuous)
 
 		if (self.tx.active_analog_ch == 0 && pretrigger == 0 &&
 		    self.trigger_config.trigger_mask == 0) {
-			ana_channels_apply_trigger();
+			apply_triggers_all(self.trigger_config.trigger_mask);
 			ana_module_set_sample_rate(config);
 			if (module_active(DIGITAL_MASK_RS485)) {
 				ana_module_set_sample_rate(ana_rs485_get_module());
@@ -584,18 +606,14 @@ void run_capture(bool continuous)
 
 		/* Phase 1: pretrigger — simple capture with no trigger wait */
 		if (pretrigger > 0) {
-			uint16_t saved_mask = self.trigger_config.trigger_mask;
-			self.trigger_config.trigger_mask = 0;
-			ana_channels_apply_trigger();
-			self.trigger_config.trigger_mask = saved_mask;
+			apply_triggers_all(0);
 			ana_module_set_sample_rate(config);
 
 			ok = capture_chunks(config, pretrigger, &total_sent);
 		}
 
-		/* Phase 2: trigger + post-trigger capture */
 		if (ok) {
-			ana_channels_apply_trigger();
+			apply_triggers_all(self.trigger_config.trigger_mask);
 			ana_module_set_sample_rate(config);
 
 			if (self.trigger_config.trigger_mask != 0 &&
@@ -603,7 +621,7 @@ void run_capture(bool continuous)
 				ok = capture_chunks(config, CAPTURE_CHUNK_SIZE, &total_sent);
 
 				if (ok) {
-					ana_channels_load_simple();
+					load_simple_all();
 					ok = capture_chunks(config,
 							    post_samples - CAPTURE_CHUNK_SIZE,
 							    &total_sent);

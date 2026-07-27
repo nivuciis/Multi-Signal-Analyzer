@@ -130,10 +130,10 @@ bool ana_usb_write(const uint8_t *buf, uint32_t len)
 	for (uint32_t i = 0; i < len; i++) {
 		uint32_t next = (head + 1u) & (TX_RING_SIZE - 1u);
 
-		/* Spin until Core 0 drains enough space; abort if disconnected */
+		/* Spin until Core 0 drains enough space; abort if disconnected or aborted */
 		while (next == tx_tail) {
 			__dmb();
-			if (!ana_usb_is_connected()) {
+			if (!ana_usb_is_connected() || ana_usb_abort_requested()) {
 				return false;
 			}
 			tight_loop_contents();

@@ -16,8 +16,11 @@
 /**
  * @brief GPIO pin for USB connected detection
  *
+ * @note Sourced from the board header (boards/board_def.h), not hardcoded —
+ * a hardcoded GPIO25 here previously collided with RS232 channel 14, which
+ * also lives on GPIO25 (PICO_DEFAULT_RS232_PIN_BASE+1).
  */
-#define LED_USB_PIN 25
+#define LED_USB_PIN PICO_DEFAULT_LED_PIN
 
 /**
  * @brief GPIO pin to indicate capturing mode

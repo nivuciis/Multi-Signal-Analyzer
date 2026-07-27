@@ -38,10 +38,31 @@ struct ana_module_system rs232 = {
 void ana_rs232_init(PIO pio)
 {
 	rs232.pio.instance = pio;
-	rs232.pio.pio_program = &capture_rs232_simple_program;
-	rs232.pio.get_default_cfg_func =
-		(pio_sm_config (*)(uint8_t))capture_rs232_simple_program_get_default_config;
-	rs232.pio.jmp_pin = 0xFF;
+	rs232.pio.programs = (struct ana_module_programs){
+		.simple = { &capture_rs232_simple_program,
+			    (pio_sm_config (*)(uint8_t))
+				    capture_rs232_simple_program_get_default_config },
+		.trigger = {
+			[ANA_TRIGGER_EDGE_RISE] = { &capture_rs232_trigger_rise_program,
+						    (pio_sm_config (*)(uint8_t))
+							    capture_rs232_trigger_rise_program_get_default_config },
+			[ANA_TRIGGER_EDGE_FALL] = { &capture_rs232_trigger_fall_program,
+						    (pio_sm_config (*)(uint8_t))
+							    capture_rs232_trigger_fall_program_get_default_config },
+			[ANA_TRIGGER_EDGE_BOTH] = { &capture_rs232_trigger_both_program,
+						    (pio_sm_config (*)(uint8_t))
+							    capture_rs232_trigger_both_program_get_default_config },
+			[ANA_TRIGGER_LEVEL_LOW] = { &capture_rs232_trigger_low_level_program,
+						    (pio_sm_config (*)(uint8_t))
+							    capture_rs232_trigger_low_level_program_get_default_config },
+			[ANA_TRIGGER_LEVEL_HIGH] = { &capture_rs232_trigger_high_level_program,
+						     (pio_sm_config (*)(uint8_t))
+							     capture_rs232_trigger_high_level_program_get_default_config },
+		},
+	};
+	rs232.pio.pio_program = rs232.pio.programs.simple.program;
+	rs232.pio.get_default_cfg_func = rs232.pio.programs.simple.get_default_cfg_func;
+	rs232.pio.jmp_pin = ANA_NO_JMP_PIN;
 
 	rs232.dma.dma_buffer = rs232_buffer_a;
 

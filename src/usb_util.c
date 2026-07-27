@@ -118,6 +118,7 @@ bool ana_usb_rx_read(uint8_t *byte)
 	}
 
 	*byte = rx_ring[tail];
+	__dmb();
 	rx_tail = (tail + 1u) & (RX_RING_SIZE - 1u);
 	return true;
 }

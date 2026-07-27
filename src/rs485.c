@@ -38,10 +38,31 @@ struct ana_module_system rs485 = {
 void ana_rs485_init(PIO pio)
 {
 	rs485.pio.instance = pio;
-	rs485.pio.pio_program = &capture_rs485_simple_program;
-	rs485.pio.get_default_cfg_func =
-		(pio_sm_config (*)(uint8_t))capture_rs485_simple_program_get_default_config;
-	rs485.pio.jmp_pin = 0xFF;
+	rs485.pio.programs = (struct ana_module_programs){
+		.simple = { &capture_rs485_simple_program,
+			    (pio_sm_config (*)(uint8_t))
+				    capture_rs485_simple_program_get_default_config },
+		.trigger = {
+			[ANA_TRIGGER_EDGE_RISE] = { &capture_rs485_trigger_rise_program,
+						    (pio_sm_config (*)(uint8_t))
+							    capture_rs485_trigger_rise_program_get_default_config },
+			[ANA_TRIGGER_EDGE_FALL] = { &capture_rs485_trigger_fall_program,
+						    (pio_sm_config (*)(uint8_t))
+							    capture_rs485_trigger_fall_program_get_default_config },
+			[ANA_TRIGGER_EDGE_BOTH] = { &capture_rs485_trigger_both_program,
+						    (pio_sm_config (*)(uint8_t))
+							    capture_rs485_trigger_both_program_get_default_config },
+			[ANA_TRIGGER_LEVEL_LOW] = { &capture_rs485_trigger_low_level_program,
+						    (pio_sm_config (*)(uint8_t))
+							    capture_rs485_trigger_low_level_program_get_default_config },
+			[ANA_TRIGGER_LEVEL_HIGH] = { &capture_rs485_trigger_high_level_program,
+						     (pio_sm_config (*)(uint8_t))
+							     capture_rs485_trigger_high_level_program_get_default_config },
+		},
+	};
+	rs485.pio.pio_program = rs485.pio.programs.simple.program;
+	rs485.pio.get_default_cfg_func = rs485.pio.programs.simple.get_default_cfg_func;
+	rs485.pio.jmp_pin = ANA_NO_JMP_PIN;
 
 	rs485.dma.dma_buffer = rs485_buffer_a;
 

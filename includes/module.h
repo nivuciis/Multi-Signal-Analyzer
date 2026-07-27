@@ -32,9 +32,15 @@
 
 /**
  * @brief Size of the ping-pong buffer for DMA transfers
- * 
+ *
  */
-#define BUFFER_SIZE 1024 
+#define BUFFER_SIZE 1024
+
+/**
+ * @brief Sentinel meaning "this program does not use a jmp pin"
+ *
+ */
+#define ANA_NO_JMP_PIN 0xFF
 
 /**
  * @brief Configuration structure for each module
@@ -60,17 +66,39 @@ struct ana_module_dma {
 	/* Chained ping-pong state (gap-free continuous digital capture).
 	 * Two DMA channels (instance = A, instance_b = B) auto-chain so the PIO
 	 * never stalls; an IRQ recycles each buffer and tracks producer count. */
-	uint8_t instance_b;          /**< Second ping-pong DMA channel */
-	uint16_t *buf_a;             /**< Ping-pong buffer A (filled by instance) */
-	uint16_t *buf_b;             /**< Ping-pong buffer B (filled by instance_b) */
-	uint32_t pp_chunk;           /**< Samples per ping-pong buffer */
-	uint32_t pp_target;          /**< Buffers needed this capture (0 = unlimited).
-					  When the IRQ sees the target reached it halts the
-					  PIO SM (and pre-disarms the final chain) so the
-					  producer never laps a fully-captured stream. */
+	uint8_t instance_b;            /**< Second ping-pong DMA channel */
+	uint16_t *buf_a;               /**< Ping-pong buffer A (filled by instance) */
+	uint16_t *buf_b;               /**< Ping-pong buffer B (filled by instance_b) */
+	uint32_t pp_chunk;             /**< Samples per ping-pong buffer */
+	uint32_t pp_target;            /**< Buffers needed this capture (0 = unlimited).
+					    When the IRQ sees the target reached it halts the
+					    PIO SM (and pre-disarms the final chain) so the
+					    producer never laps a fully-captured stream. */
 	volatile uint32_t pp_produced; /**< Buffers completed by DMA (IRQ) */
 	volatile uint32_t pp_consumed; /**< Buffers consumed by Core 1 */
 	volatile bool pp_overflow;     /**< Producer lapped consumer → data loss */
+};
+
+/**
+ * @brief A PIO program together with its generated default-config getter
+ *
+ */
+struct ana_module_program {
+	const pio_program_t *program;                          /**< PIO program */
+	pio_sm_config (*get_default_cfg_func)(uint8_t offset); /**< Default-config getter */
+};
+
+/**
+ * @brief Capture programs available to a module.
+ *
+ * @note Every module provides one free-running program plus one program per
+ * trigger type, all indexed by enum ana_trigger_type. Entries left zeroed fall
+ * back to @ref ana_module_programs.simple.
+ */
+struct ana_module_programs {
+	struct ana_module_program simple; /**< Free-running capture (no trigger wait) */
+	struct ana_module_program
+		trigger[ANA_TRIGGER_TYPE_COUNT]; /**< Indexed by enum ana_trigger_type */
 };
 
 /**
@@ -85,6 +113,7 @@ struct ana_module_pio {
 	const pio_program_t *pio_program; /**< Pointer to the PIO program */
 	pio_sm_config (*get_default_cfg_func)(
 		uint8_t offset); /**< Function to get default state machine configuration */
+	struct ana_module_programs programs; /**< Simple + per-trigger-type programs */
 };
 
 /**
@@ -103,6 +132,22 @@ struct ana_module_system {
  * @param config Structure referencing the module configuration
  */
 void ana_module_pio_init(struct ana_module_system *config);
+
+/**
+ * @brief Apply the trigger configuration to the module
+ *
+ * @param config   Structure referencing the module configuration
+ * @param triggers Bitmask of channels-module channels to trigger on
+ */
+void ana_apply_triggers(struct ana_module_system *config, uint16_t triggers);
+
+/**
+ * @brief Load the simple (free-running) PIO program into the module
+ *
+ *
+ * @param config Structure referencing the module configuration
+ */
+void ana_load_simple_program(struct ana_module_system *config);
 
 /**
  * @brief Initialize the DMA configuration
@@ -129,7 +174,7 @@ void ana_module_pio_dma_start(struct ana_module_system *config);
  * @brief Wait for the DMA operation to complete for the PIO program
  *
  * @param config Structure referencing the module configuration
-*/
+ */
 void ana_module_pio_dma_wait(struct ana_module_system *config);
 
 /**

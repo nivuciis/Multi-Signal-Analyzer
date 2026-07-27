@@ -77,6 +77,39 @@ void ana_module_pio_init(struct ana_module_system *config)
 	pio_sm_set_enabled(config->pio.instance, config->pio.sm, false);
 }
 
+void ana_load_simple_program(struct ana_module_system *config)
+{
+	ana_module_pio_reload(config, config->pio.programs.simple.program,
+			      config->pio.programs.simple.get_default_cfg_func, ANA_NO_JMP_PIN);
+}
+
+void ana_apply_triggers(struct ana_module_system *config, uint16_t triggers)
+{
+	struct sigrok_trigger *trigger = ana_sigrok_get_trigger();
+	const struct ana_module_program *prog = &config->pio.programs.simple;
+	uint8_t jmp_pin = ANA_NO_JMP_PIN;
+
+	for (int i = 0; i < MAX_NUM_CHANNELS; i++) {
+		if (!(triggers & (uint16_t)(1u << i))) {
+			continue;
+		}
+
+		enum ana_trigger_type type = trigger->trigger_type[i];
+
+		if (type >= ANA_TRIGGER_TYPE_COUNT ||
+		    config->pio.programs.trigger[type].program == NULL) {
+			break;
+		}
+
+		prog = &config->pio.programs.trigger[type];
+		/* Physical GPIO of the channels module: all modules wait on it. */
+		jmp_pin = (uint8_t)(PICO_DEFAULT_CHANNELS_PIN_BASE + i);
+		break;
+	}
+
+	ana_module_pio_reload(config, prog->program, prog->get_default_cfg_func, jmp_pin);
+}
+
 void ana_module_dma_init(struct ana_module_system *config)
 {
 	log_debug(config->module.name, "Initializing DMA...");
@@ -262,6 +295,17 @@ void ana_module_pingpong_stop(struct ana_module_system *config)
 	pio_sm_set_enabled(config->pio.instance, config->pio.sm, false);
 	dma_channel_set_irq0_enabled(config->dma.instance, false);
 	dma_channel_set_irq0_enabled(config->dma.instance_b, false);
+
+	/* @note: Errata RP2350-E5: clear the enable bit of the aborted channel and any
+	 * chained channel BEFORE calling dma_channel_abort(), or the abort can
+	 * spuriously re-trigger the chained partner. Both ping-pong channels are chained to each
+	 * other, so clear both before aborting either. 
+	 */
+	hw_write_masked(&dma_hw->ch[config->dma.instance].al1_ctrl, 0u,
+			DMA_CH0_CTRL_TRIG_EN_BITS);
+	hw_write_masked(&dma_hw->ch[config->dma.instance_b].al1_ctrl, 0u,
+			DMA_CH0_CTRL_TRIG_EN_BITS);
+
 	dma_channel_abort(config->dma.instance);
 	dma_channel_abort(config->dma.instance_b);
 }

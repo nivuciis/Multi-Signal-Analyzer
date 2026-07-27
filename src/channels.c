@@ -39,10 +39,31 @@ struct ana_module_system channels = {
 void ana_channels_init(PIO pio)
 {
 	channels.pio.instance = pio;
-	channels.pio.pio_program = &capture_prog_simple_program;
-	channels.pio.get_default_cfg_func =
-		(pio_sm_config(*)(uint8_t))capture_prog_simple_program_get_default_config;
-	channels.pio.jmp_pin = 0xFF;
+	channels.pio.programs = (struct ana_module_programs){
+		.simple = { &capture_prog_simple_program,
+			    (pio_sm_config(*)(uint8_t))
+				    capture_prog_simple_program_get_default_config },
+		.trigger = {
+			[ANA_TRIGGER_EDGE_RISE] = { &capture_prog_trigger_rise_program,
+						    (pio_sm_config(*)(uint8_t))
+							    capture_prog_trigger_rise_program_get_default_config },
+			[ANA_TRIGGER_EDGE_FALL] = { &capture_prog_trigger_fall_program,
+						    (pio_sm_config(*)(uint8_t))
+							    capture_prog_trigger_fall_program_get_default_config },
+			[ANA_TRIGGER_EDGE_BOTH] = { &capture_prog_trigger_both_program,
+						    (pio_sm_config(*)(uint8_t))
+							    capture_prog_trigger_both_program_get_default_config },
+			[ANA_TRIGGER_LEVEL_LOW] = { &capture_prog_trigger_low_level_program,
+						    (pio_sm_config(*)(uint8_t))
+							    capture_prog_trigger_low_level_program_get_default_config },
+			[ANA_TRIGGER_LEVEL_HIGH] = { &capture_prog_trigger_high_level_program,
+						     (pio_sm_config(*)(uint8_t))
+							     capture_prog_trigger_high_level_program_get_default_config },
+		},
+	};
+	channels.pio.pio_program = channels.pio.programs.simple.program;
+	channels.pio.get_default_cfg_func = channels.pio.programs.simple.get_default_cfg_func;
+	channels.pio.jmp_pin = ANA_NO_JMP_PIN;
 
 	channels.dma.dma_buffer = digital_channel_buffer_a;
 
@@ -64,71 +85,4 @@ uint16_t *ana_channels_get_alt_buffer(void)
 	return (channels.dma.dma_buffer == digital_channel_buffer_a)
 		       ? digital_channel_buffer_b
 		       : digital_channel_buffer_a;
-}
-
-void ana_channels_load_simple(void)
-{
-	ana_module_pio_reload(&channels, &capture_prog_simple_program,
-			      (pio_sm_config(*)(uint8_t))capture_prog_simple_program_get_default_config,
-			      0xFF);
-}
-
-void ana_channels_apply_trigger(void)
-{
-	struct sigrok_trigger *trigger = ana_sigrok_get_trigger();
-
-	const pio_program_t *prog = &capture_prog_simple_program;
-	pio_sm_config (*cfg_func)(uint8_t) =
-		(pio_sm_config(*)(uint8_t))capture_prog_simple_program_get_default_config;
-	uint8_t jmp_pin = 0xFF; /* sentinel: no jmp_pin (matches ana_module_pio_init check) */
-
-	int trig_ch = -1;
-	enum ana_trigger_type trig_type = ANA_TRIGGER_EDGE_RISE;
-
-	for (int i = 0; i < PICO_DEFAULT_CHANNELS_PIN_COUNT; i++) {
-		if (trigger->trigger_mask & (uint16_t)(1u << i)) {
-			trig_ch = i;
-			trig_type = trigger->trigger_type[i];
-			break;
-		}
-	}
-
-	if (trig_ch >= 0) {
-		jmp_pin = (uint8_t)(PICO_DEFAULT_CHANNELS_PIN_BASE + trig_ch);
-
-		switch (trig_type) {
-		case ANA_TRIGGER_EDGE_RISE:
-			prog = &capture_prog_trigger_rise_program;
-			cfg_func = (pio_sm_config(*)(
-				uint8_t))capture_prog_trigger_rise_program_get_default_config;
-			break;
-		case ANA_TRIGGER_EDGE_FALL:
-			prog = &capture_prog_trigger_fall_program;
-			cfg_func = (pio_sm_config(*)(
-				uint8_t))capture_prog_trigger_fall_program_get_default_config;
-			break;
-		case ANA_TRIGGER_EDGE_BOTH:
-			prog = &capture_prog_trigger_both_program;
-			cfg_func = (pio_sm_config(*)(
-				uint8_t))capture_prog_trigger_both_program_get_default_config;
-			break;
-		case ANA_TRIGGER_LEVEL_LOW:
-			prog = &capture_prog_trigger_low_level_program;
-			cfg_func = (pio_sm_config(*)(
-				uint8_t))capture_prog_trigger_low_level_program_get_default_config;
-			break;
-		case ANA_TRIGGER_LEVEL_HIGH:
-			prog = &capture_prog_trigger_high_level_program;
-			cfg_func = (pio_sm_config(*)(
-				uint8_t))capture_prog_trigger_high_level_program_get_default_config;
-			break;
-		default:
-			jmp_pin = 0xFF;
-			prog = &capture_prog_simple_program;
-			cfg_func = (pio_sm_config(*)(uint8_t))capture_prog_simple_program_get_default_config;
-			break;
-		}
-	}
-
-	ana_module_pio_reload(&channels, prog, cfg_func, jmp_pin);
 }

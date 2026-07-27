@@ -77,6 +77,7 @@ enum ana_trigger_type {
 	ANA_TRIGGER_EDGE_BOTH,  /**< Both edges trigger */
 	ANA_TRIGGER_LEVEL_LOW,  /**< Low level trigger */
 	ANA_TRIGGER_LEVEL_HIGH, /**< High level trigger */
+	ANA_TRIGGER_TYPE_COUNT, /**< Number of trigger types (not a trigger) */
 };
 
 /**

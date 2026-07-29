@@ -37,8 +37,9 @@
 #define BUFFER_SIZE 1024
 
 /**
- * @brief Sentinel meaning "this program does not use a jmp pin"
+ * @brief Pin number used for conditional jumps in the PIO program.
  *
+ * @note:  this is the default state for `jmp pin` instruction.
  */
 #define ANA_NO_JMP_PIN 0xFF
 
@@ -98,7 +99,7 @@ struct ana_module_program {
 struct ana_module_programs {
 	struct ana_module_program simple; /**< Free-running capture (no trigger wait) */
 	struct ana_module_program
-		trigger[ANA_TRIGGER_TYPE_COUNT]; /**< Indexed by enum ana_trigger_type */
+		trigger[_ANA_TRIGGER_TYPE_COUNT]; /**< Indexed by enum ana_trigger_type */
 };
 
 /**

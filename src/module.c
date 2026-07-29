@@ -96,7 +96,7 @@ void ana_apply_triggers(struct ana_module_system *config, uint16_t triggers)
 
 		enum ana_trigger_type type = trigger->trigger_type[i];
 
-		if (type >= ANA_TRIGGER_TYPE_COUNT ||
+		if (type >= _ANA_TRIGGER_TYPE_COUNT ||
 		    config->pio.programs.trigger[type].program == NULL) {
 			break;
 		}

@@ -1,4 +1,5 @@
-/*******************************************************************
+/*             │                                                                             │
+│                          │ ******************************************************************
  * @file rs485.c
  *
  * @brief RS485 channel implementation for the Multi-Signal Analyzer project
@@ -9,11 +10,11 @@
  * @copyright Copyright (c) 2026
  *
  *******************************************************************/
-#include "rs485.pio.h"
-#include "rs485.h"
 #include "debug.h"
-#include "module.h"
 #include "handles/sigrok_handler.h"
+#include "module.h"
+#include "rs485.h"
+#include "rs485.pio.h"
 
 #include <hardware/pio.h>
 
@@ -25,12 +26,13 @@ static uint16_t rs485_buffer_a[BUFFER_SIZE] __attribute__((aligned(2 * BUFFER_SI
 static uint16_t rs485_buffer_b[BUFFER_SIZE] __attribute__((aligned(2 * BUFFER_SIZE)));
 
 struct ana_module_system rs485 = {
-	.module = {
-		.name      = MODULE_NAME,
-		.pin_base  = PICO_DEFAULT_RS485_PIN_BASE,
-		.pin_count = PICO_DEFAULT_RS485_PIN_COUNT,
-		.mask      = 0x0001,
-	},
+	.module =
+		{
+			.name = MODULE_NAME,
+			.pin_base = PICO_DEFAULT_RS485_PIN_BASE,
+			.pin_count = PICO_DEFAULT_RS485_PIN_COUNT,
+			.mask = 0x0001,
+		},
 	.pio = {0},
 	.dma = {0},
 };
@@ -39,26 +41,32 @@ void ana_rs485_init(PIO pio)
 {
 	rs485.pio.instance = pio;
 	rs485.pio.programs = (struct ana_module_programs){
-		.simple = { &capture_rs485_simple_program,
-			    (pio_sm_config (*)(uint8_t))
-				    capture_rs485_simple_program_get_default_config },
-		.trigger = {
-			[ANA_TRIGGER_EDGE_RISE] = { &capture_rs485_trigger_rise_program,
-						    (pio_sm_config (*)(uint8_t))
-							    capture_rs485_trigger_rise_program_get_default_config },
-			[ANA_TRIGGER_EDGE_FALL] = { &capture_rs485_trigger_fall_program,
-						    (pio_sm_config (*)(uint8_t))
-							    capture_rs485_trigger_fall_program_get_default_config },
-			[ANA_TRIGGER_EDGE_BOTH] = { &capture_rs485_trigger_both_program,
-						    (pio_sm_config (*)(uint8_t))
-							    capture_rs485_trigger_both_program_get_default_config },
-			[ANA_TRIGGER_LEVEL_LOW] = { &capture_rs485_trigger_low_level_program,
-						    (pio_sm_config (*)(uint8_t))
-							    capture_rs485_trigger_low_level_program_get_default_config },
-			[ANA_TRIGGER_LEVEL_HIGH] = { &capture_rs485_trigger_high_level_program,
-						     (pio_sm_config (*)(uint8_t))
-							     capture_rs485_trigger_high_level_program_get_default_config },
-		},
+		.simple = {&capture_rs485_simple_program,
+			   (pio_sm_config (*)(
+				   uint8_t))capture_rs485_simple_program_get_default_config},
+		.trigger =
+			{
+				[ANA_TRIGGER_EDGE_RISE] =
+					{&capture_rs485_trigger_rise_program,
+					 (pio_sm_config (*)(uint8_t))
+						 capture_rs485_trigger_rise_program_get_default_config},
+				[ANA_TRIGGER_EDGE_FALL] =
+					{&capture_rs485_trigger_fall_program,
+					 (pio_sm_config (*)(uint8_t))
+						 capture_rs485_trigger_fall_program_get_default_config},
+				[ANA_TRIGGER_EDGE_BOTH] =
+					{&capture_rs485_trigger_both_program,
+					 (pio_sm_config (*)(uint8_t))
+						 capture_rs485_trigger_both_program_get_default_config},
+				[ANA_TRIGGER_LEVEL_LOW] =
+					{&capture_rs485_trigger_low_level_program,
+					 (pio_sm_config (*)(uint8_t))
+						 capture_rs485_trigger_low_level_program_get_default_config},
+				[ANA_TRIGGER_LEVEL_HIGH] =
+					{&capture_rs485_trigger_high_level_program,
+					 (pio_sm_config (*)(uint8_t))
+						 capture_rs485_trigger_high_level_program_get_default_config},
+			},
 	};
 	rs485.pio.pio_program = rs485.pio.programs.simple.program;
 	rs485.pio.get_default_cfg_func = rs485.pio.programs.simple.get_default_cfg_func;

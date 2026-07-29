@@ -1,4 +1,4 @@
-/** -------------------------------------------------------------
+/******************************************************************
  * @file capture_data.h
  * @brief Capture data module interface
  *
@@ -6,8 +6,9 @@
  * @author   João Matheus Nascimento Dias <joao.dias@edge.ufal.br>
  * @version   v1.0
  * @date      17/03/2026
+ *
  * @copyright   Copyright (c) 2026
- *  ------------------------------------------------------------*/
+ *******************************************************************/
 
 #ifndef CAPTURE_DATA_H
 #define CAPTURE_DATA_H

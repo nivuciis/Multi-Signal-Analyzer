@@ -9,11 +9,11 @@
  * @copyright Copyright (c) 2026
  *
  *******************************************************************/
-#include "rs232.pio.h"
-#include "rs232.h"
 #include "debug.h"
-#include "module.h"
 #include "handles/sigrok_handler.h"
+#include "module.h"
+#include "rs232.h"
+#include "rs232.pio.h"
 
 #include <hardware/pio.h>
 
@@ -25,12 +25,13 @@ static uint16_t rs232_buffer_a[BUFFER_SIZE] __attribute__((aligned(2 * BUFFER_SI
 static uint16_t rs232_buffer_b[BUFFER_SIZE] __attribute__((aligned(2 * BUFFER_SIZE)));
 
 struct ana_module_system rs232 = {
-	.module = {
-		.name      = MODULE_NAME,
-		.pin_base  = PICO_DEFAULT_RS232_PIN_BASE,
-		.pin_count = PICO_DEFAULT_RS232_PIN_COUNT,
-		.mask      = 0x0003,
-	},
+	.module =
+		{
+			.name = MODULE_NAME,
+			.pin_base = PICO_DEFAULT_RS232_PIN_BASE,
+			.pin_count = PICO_DEFAULT_RS232_PIN_COUNT,
+			.mask = 0x0003,
+		},
 	.pio = {0},
 	.dma = {0},
 };
@@ -39,26 +40,32 @@ void ana_rs232_init(PIO pio)
 {
 	rs232.pio.instance = pio;
 	rs232.pio.programs = (struct ana_module_programs){
-		.simple = { &capture_rs232_simple_program,
-			    (pio_sm_config (*)(uint8_t))
-				    capture_rs232_simple_program_get_default_config },
-		.trigger = {
-			[ANA_TRIGGER_EDGE_RISE] = { &capture_rs232_trigger_rise_program,
-						    (pio_sm_config (*)(uint8_t))
-							    capture_rs232_trigger_rise_program_get_default_config },
-			[ANA_TRIGGER_EDGE_FALL] = { &capture_rs232_trigger_fall_program,
-						    (pio_sm_config (*)(uint8_t))
-							    capture_rs232_trigger_fall_program_get_default_config },
-			[ANA_TRIGGER_EDGE_BOTH] = { &capture_rs232_trigger_both_program,
-						    (pio_sm_config (*)(uint8_t))
-							    capture_rs232_trigger_both_program_get_default_config },
-			[ANA_TRIGGER_LEVEL_LOW] = { &capture_rs232_trigger_low_level_program,
-						    (pio_sm_config (*)(uint8_t))
-							    capture_rs232_trigger_low_level_program_get_default_config },
-			[ANA_TRIGGER_LEVEL_HIGH] = { &capture_rs232_trigger_high_level_program,
-						     (pio_sm_config (*)(uint8_t))
-							     capture_rs232_trigger_high_level_program_get_default_config },
-		},
+		.simple = {&capture_rs232_simple_program,
+			   (pio_sm_config(*)(
+				   uint8_t))capture_rs232_simple_program_get_default_config},
+		.trigger =
+			{
+				[ANA_TRIGGER_EDGE_RISE] =
+					{&capture_rs232_trigger_rise_program,
+					 (pio_sm_config(*)(uint8_t))
+						 capture_rs232_trigger_rise_program_get_default_config},
+				[ANA_TRIGGER_EDGE_FALL] =
+					{&capture_rs232_trigger_fall_program,
+					 (pio_sm_config(*)(uint8_t))
+						 capture_rs232_trigger_fall_program_get_default_config},
+				[ANA_TRIGGER_EDGE_BOTH] =
+					{&capture_rs232_trigger_both_program,
+					 (pio_sm_config(*)(uint8_t))
+						 capture_rs232_trigger_both_program_get_default_config},
+				[ANA_TRIGGER_LEVEL_LOW] =
+					{&capture_rs232_trigger_low_level_program,
+					 (pio_sm_config(*)(uint8_t))
+						 capture_rs232_trigger_low_level_program_get_default_config},
+				[ANA_TRIGGER_LEVEL_HIGH] =
+					{&capture_rs232_trigger_high_level_program,
+					 (pio_sm_config(*)(uint8_t))
+						 capture_rs232_trigger_high_level_program_get_default_config},
+			},
 	};
 	rs232.pio.pio_program = rs232.pio.programs.simple.program;
 	rs232.pio.get_default_cfg_func = rs232.pio.programs.simple.get_default_cfg_func;

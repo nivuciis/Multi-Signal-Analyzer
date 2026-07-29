@@ -172,8 +172,7 @@ void ana_module_set_sample_rate(struct ana_module_system *config)
 
 static void ana_module_pp_disarm_final_chain(struct ana_module_system *m)
 {
-	uint8_t final_chan =
-		((m->dma.pp_target - 1u) & 1u) ? m->dma.instance_b : m->dma.instance;
+	uint8_t final_chan = ((m->dma.pp_target - 1u) & 1u) ? m->dma.instance_b : m->dma.instance;
 	hw_write_masked(&dma_hw->ch[final_chan].al1_ctrl,
 			(uint32_t)final_chan << DMA_CH0_CTRL_TRIG_CHAIN_TO_LSB,
 			DMA_CH0_CTRL_TRIG_CHAIN_TO_BITS);
@@ -266,8 +265,8 @@ void ana_module_pingpong_start(struct ana_module_system *config)
 
 	/* Single-buffer capture: channel A must not chain at all — B would
 	 * eventually chain back and overwrite buffer A mid-send. */
-	uint8_t chain_a = (config->dma.pp_target == 1u) ? config->dma.instance
-							: config->dma.instance_b;
+	uint8_t chain_a =
+		(config->dma.pp_target == 1u) ? config->dma.instance : config->dma.instance_b;
 
 	ana_module_pp_configure(config, config->dma.instance, chain_a, config->dma.buf_a);
 	ana_module_pp_configure(config, config->dma.instance_b, config->dma.instance,
@@ -299,10 +298,9 @@ void ana_module_pingpong_stop(struct ana_module_system *config)
 	/* @note: Errata RP2350-E5: clear the enable bit of the aborted channel and any
 	 * chained channel BEFORE calling dma_channel_abort(), or the abort can
 	 * spuriously re-trigger the chained partner. Both ping-pong channels are chained to each
-	 * other, so clear both before aborting either. 
+	 * other, so clear both before aborting either.
 	 */
-	hw_write_masked(&dma_hw->ch[config->dma.instance].al1_ctrl, 0u,
-			DMA_CH0_CTRL_TRIG_EN_BITS);
+	hw_write_masked(&dma_hw->ch[config->dma.instance].al1_ctrl, 0u, DMA_CH0_CTRL_TRIG_EN_BITS);
 	hw_write_masked(&dma_hw->ch[config->dma.instance_b].al1_ctrl, 0u,
 			DMA_CH0_CTRL_TRIG_EN_BITS);
 

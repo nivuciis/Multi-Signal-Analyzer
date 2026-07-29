@@ -4,7 +4,7 @@ void handle_set_digital_channel(void)
 {
 	struct sigrok_handler *self = ana_sigrok_get_self();
 	int enable = self->cmd_str[1] - '0';
-	int ch     = (int)strtol((char *)&self->cmd_str[2], &self->end_ptr, 10);
+	int ch = (int)strtol((char *)&self->cmd_str[2], &self->end_ptr, 10);
 	if (self->end_ptr == (char *)&self->cmd_str[2] || self->end_ptr == NULL ||
 	    *self->end_ptr != '\0') {
 		log_warn("sigrok", "Invalid digital channel");

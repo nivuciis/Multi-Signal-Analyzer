@@ -14,12 +14,6 @@
 #define LED_H
 
 /**
- * @brief GPIO pin number for capturing data info LED.
- *
- */
-#define LED_USB_PIN PICO_DEFAULT_LED_PIN
-
-/**
  * @brief GPIO pin to indicate capturing mode
  *
  */

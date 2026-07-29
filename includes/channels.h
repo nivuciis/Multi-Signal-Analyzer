@@ -17,16 +17,16 @@
 
 /**
  * @brief Initialize the channels module
- * 
+ *
  */
 void ana_channels_init(PIO pio);
 
 /**
  * @brief Get the module configuration for the channels
- * 
+ *
  * @return struct ana_module_system* Pointer to the module configuration structure
  */
-struct ana_module_system* ana_channels_get_module(void);
+struct ana_module_system *ana_channels_get_module(void);
 
 /**
  * @brief Return the DMA buffer not currently pointed to by the module's dma_buffer.

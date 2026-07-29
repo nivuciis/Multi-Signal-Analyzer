@@ -28,11 +28,12 @@
 #include "capture_data.h"
 #include "channels.h"
 #include "device/usbd.h"
+#include "handles/sigrok_handler.h"
 #include "led.h"
 #include "rs232.h"
 #include "rs485.h"
-#include "handles/sigrok_handler.h"
 #include "usb_util.h"
+
 #include <stdint.h>
 
 #include <hardware/timer.h>
@@ -52,8 +53,7 @@ static bool ana_sync_led_with_usb_connection(struct repeating_timer *rt)
 	if (connected != last_connected) {
 		last_connected = connected;
 		if (!connected || ana_led_get_status() != LED_STATUS_CAPTURING) {
-			ana_led_set_status(connected ? LED_STATUS_CONNECTED
-						     : LED_STATUS_OFF);
+			ana_led_set_status(connected ? LED_STATUS_CONNECTED : LED_STATUS_OFF);
 		}
 	}
 	return true;
@@ -103,8 +103,7 @@ int main(void)
 		return PICO_ERROR_IO;
 	}
 
-	add_repeating_timer_ms(100, ana_sync_led_with_usb_connection, NULL,
-			       &usb_connection_timer);
+	add_repeating_timer_ms(100, ana_sync_led_with_usb_connection, NULL, &usb_connection_timer);
 
 	uint8_t tmp[64];
 

@@ -12,11 +12,12 @@
 #ifndef ADC_H
 #define ADC_H
 
-#include "module.h"
 #include "handles/sigrok_handler.h"
+#include "module.h"
 
 #include <stdbool.h>
 #include <stdint.h>
+
 #include <hardware/adc.h>
 #include <hardware/dma.h>
 
@@ -33,8 +34,8 @@
  */
 struct ana_adc_module {
 	struct ana_module_config const module;
-	float    clkdiv;
-	int      dma_chan;
+	float clkdiv;
+	int dma_chan;
 	uint16_t *raw[ADC_NUM_CHANNELS]; /**< raw[ch][sample] — 12-bit values */
 };
 
@@ -105,7 +106,8 @@ void ana_adc_capture_abort(void);
  * @param sample_idx Sample index within the capture.
  * @return uint8_t   Byte ready to write into the TX stream.
  */
-static inline uint8_t ana_adc_sigrok_byte(uint8_t sigrok_ch, uint32_t sample_idx, struct ana_adc_module *adc)
+static inline uint8_t ana_adc_sigrok_byte(uint8_t sigrok_ch, uint32_t sample_idx,
+					  struct ana_adc_module *adc)
 {
 	return (uint8_t)(0x80u | ((adc->raw[sigrok_ch][sample_idx] >> 5) & 0x7Fu));
 }

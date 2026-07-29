@@ -4,9 +4,9 @@
  * @brief Board-specific definitions for the Multi-Signal Analyzer hardware linked to the RP2350B
  * @version 0.1
  * @date 11/05/2026
- * 
+ *
  * @copyright Copyright (c) 2026
- * 
+ *
  */
 
 #ifndef _BOARD_DEF_H_

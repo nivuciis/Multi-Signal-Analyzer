@@ -20,17 +20,12 @@
  *   the voltage-divider-aware conversion factor, then stored in the
  *   per-channel float buffers.
  *
- *   This avoids:
- *     - Changing adc_select_input() while the ADC is running (Bug A)
- *     - FIFO overflow from free-running mode + slow software loop (Bug B)
- *     - Capturing channels that are not enabled (Bug C)
- *     - PulseView timeouts from a slow blocking software loop (Bug D)
- *
  *******************************************************************/
 #include "adc.h"
 #include "log.h"
 
 #include <stdint.h>
+
 #include <hardware/adc.h>
 #include <hardware/dma.h>
 
@@ -52,25 +47,26 @@ static const uint8_t SIGROK_CH_TO_GPIO[ADC_NUM_CHANNELS] = {
 	PICO_DEFAULT_ADC_CHANNEL_3, /* sigrok ch 2 */
 };
 
-
 static uint16_t adc_buf_raw[ADC_NUM_CHANNELS][ADC_BUF_SIZE];
 
 static uint16_t adc_dma_scratch[ADC_BUF_SIZE * ADC_NUM_CHANNELS];
 
 struct ana_adc_module ana_adc = {
-	.module = {
-		.name      = "ADC",
-		.pin_base  = PICO_DEFAULT_ADC_PIN_BASE,
-		.pin_count = PICO_DEFAULT_ADC_PIN_COUNT,
-		.mask      = 0x0000,
-	},
-	.clkdiv  = 0.0f,
+	.module =
+		{
+			.name = "ADC",
+			.pin_base = PICO_DEFAULT_ADC_PIN_BASE,
+			.pin_count = PICO_DEFAULT_ADC_PIN_COUNT,
+			.mask = 0x0000,
+		},
+	.clkdiv = 0.0f,
 	.dma_chan = -1,
-	.raw     = {
-		adc_buf_raw[0],
-		adc_buf_raw[1],
-		adc_buf_raw[2],
-	},
+	.raw =
+		{
+			adc_buf_raw[0],
+			adc_buf_raw[1],
+			adc_buf_raw[2],
+		},
 };
 
 void ana_adc_init(void)
@@ -123,10 +119,10 @@ float ana_adc_read(uint8_t channel)
 /* In-flight capture state shared between start/finish/abort. */
 static struct {
 	uint32_t samples;
-	uint8_t  analog_mask;
-	int      ch_order[ADC_NUM_CHANNELS];
-	int      active_cnt;
-	bool     running;
+	uint8_t analog_mask;
+	int ch_order[ADC_NUM_CHANNELS];
+	int active_cnt;
+	bool running;
 } adc_capture;
 
 bool ana_adc_capture_start(uint32_t samples, uint8_t analog_mask)
@@ -174,13 +170,13 @@ bool ana_adc_capture_start(uint32_t samples, uint8_t analog_mask)
 	adc_select_input(adc_capture.ch_order[0]);
 
 	dma_channel_config cfg = dma_channel_get_default_config(ana_adc.dma_chan);
-	channel_config_set_read_increment(&cfg,  false);
+	channel_config_set_read_increment(&cfg, false);
 	channel_config_set_write_increment(&cfg, true);
 	channel_config_set_dreq(&cfg, DREQ_ADC);
 	channel_config_set_transfer_data_size(&cfg, DMA_SIZE_16);
 
-	dma_channel_configure(ana_adc.dma_chan, &cfg,
-			      adc_dma_scratch, &adc_hw->fifo, total_xfers, true);
+	dma_channel_configure(ana_adc.dma_chan, &cfg, adc_dma_scratch, &adc_hw->fifo, total_xfers,
+			      true);
 
 	adc_run(true);
 	adc_capture.running = true;
@@ -203,9 +199,9 @@ bool ana_adc_capture_finish(void)
 
 	for (uint32_t s = 0; s < adc_capture.samples; s++) {
 		for (int c = 0; c < adc_capture.active_cnt; c++) {
-			uint16_t raw  = adc_dma_scratch[s * (uint32_t)adc_capture.active_cnt +
-							(uint32_t)c];
-			int      hwch = adc_capture.ch_order[c];
+			uint16_t raw =
+				adc_dma_scratch[s * (uint32_t)adc_capture.active_cnt + (uint32_t)c];
+			int hwch = adc_capture.ch_order[c];
 
 			if (raw & 0x8000u) {
 				overflow = true;
@@ -226,8 +222,7 @@ bool ana_adc_capture_finish(void)
 		log_warn(ana_adc.module.name, "ADC FIFO overflow at rate too high");
 	}
 
-	log_debug(ana_adc.module.name,
-		  "Captured %lu samples x %d ch",
+	log_debug(ana_adc.module.name, "Captured %lu samples x %d ch",
 		  (unsigned long)adc_capture.samples, adc_capture.active_cnt);
 
 	return !overflow;

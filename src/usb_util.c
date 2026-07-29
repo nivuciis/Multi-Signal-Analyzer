@@ -13,21 +13,25 @@
  * @version 0.5
  * @date 07/05/2026
  *
- * @note Ring buffer is used to decouple the USB CDC processing (Core 0) from the Sigrok protocol handling (Core 1).  
- * 		This allows Core 1 to process data at its own pace without blocking Core 0's USB tasks, and vice versa.
+ * @note Ring buffer is used to decouple the USB CDC processing (Core 0) from the Sigrok protocol
+ *handling (Core 1). This allows Core 1 to process data at its own pace without blocking Core 0's
+ *USB tasks, and vice versa.
  *
- * @note the __dmb() calls ensure memory ordering between the cores, preventing race conditions when checking connection status and updating ring buffer indices.
- *		Ensuring that all memory accesses prior to the __dmb() call occur before subsequent instructions. Blocks CPU optimizations that could reorder memory accesses 
- *		across the barrier, which is crucial for correct synchronization between the two cores when checking connection status and updating ring buffer indices.
+ * @note the __dmb() calls ensure memory ordering between the cores, preventing race conditions when
+ *checking connection status and updating ring buffer indices. Ensuring that all memory accesses
+ *prior to the __dmb() call occur before subsequent instructions. Blocks CPU optimizations that
+ *could reorder memory accesses across the barrier, which is crucial for correct synchronization
+ *between the two cores when checking connection status and updating ring buffer indices.
  * @copyright Copyright (c) 2026
  *
  *******************************************************************/
 
 #include "usb_util.h"
 
+#include <stdint.h>
+
 #include <hardware/sync.h>
 #include <pico/platform/common.h>
-#include <stdint.h>
 #include <tusb.h>
 
 #define RX_RING_SIZE 512U
@@ -118,6 +122,7 @@ bool ana_usb_rx_read(uint8_t *byte)
 	}
 
 	*byte = rx_ring[tail];
+	__dmb();
 	rx_tail = (tail + 1u) & (RX_RING_SIZE - 1u);
 	return true;
 }
@@ -129,10 +134,10 @@ bool ana_usb_write(const uint8_t *buf, uint32_t len)
 	for (uint32_t i = 0; i < len; i++) {
 		uint32_t next = (head + 1u) & (TX_RING_SIZE - 1u);
 
-		/* Spin until Core 0 drains enough space; abort if disconnected */
+		/* Spin until Core 0 drains enough space; abort if disconnected or aborted */
 		while (next == tx_tail) {
 			__dmb();
-			if (!ana_usb_is_connected()) {
+			if (!ana_usb_is_connected() || ana_usb_abort_requested()) {
 				return false;
 			}
 			tight_loop_contents();
@@ -152,7 +157,7 @@ void ana_usb_tx_drain(void)
 	__dmb();
 	uint32_t head = tx_head;
 	uint32_t tail = tx_tail;
-	bool flushed  = false;
+	bool flushed = false;
 
 	while (tail != head) {
 		uint32_t avail = tud_cdc_write_available();
@@ -161,15 +166,15 @@ void ana_usb_tx_drain(void)
 		}
 
 		uint32_t pending = (head - tail) & (TX_RING_SIZE - 1u);
-		uint32_t linear  = TX_RING_SIZE - tail;
-		uint32_t chunk   = pending < linear ? pending : linear;
+		uint32_t linear = TX_RING_SIZE - tail;
+		uint32_t chunk = pending < linear ? pending : linear;
 		chunk = chunk < avail ? chunk : avail;
 
 		uint32_t written = tud_cdc_write(&tx_ring[tail], chunk);
 		if (written == 0) {
 			break;
 		}
-		tail    = (tail + written) & (TX_RING_SIZE - 1u);
+		tail = (tail + written) & (TX_RING_SIZE - 1u);
 		flushed = true;
 	}
 

@@ -3,7 +3,7 @@
  * @brief PIO program for capturing RS232 signals on GPIO 24-25
  *
  * @author   João Matheus Nascimento Dias <joao.dias@edge.ufal.br>
- * @version  0.1
+ * @version  0.2
  * @date     15/06/2026
  * @copyright Copyright (c) 2026
  *  ------------------------------------------------------------*/
@@ -11,4 +11,56 @@
 .program capture_rs232_simple
 .wrap_target
     in pins, 2    ; two pins per PIO clock; autopush at 2-bit threshold
+.wrap
+
+.program capture_rs232_trigger_rise
+    jmp pin  WAIT_LOW        ; if currently high, first wait for low
+WAIT_HIGH:
+    jmp pin  CAPTURE         ; rising edge detected -> start capture
+    jmp      WAIT_HIGH
+WAIT_LOW:
+    jmp pin  WAIT_LOW        ; spin while still high
+    jmp      WAIT_HIGH       ; now low -> wait for next rising edge
+CAPTURE:
+.wrap_target
+    in pins, 2
+.wrap
+
+.program capture_rs232_trigger_fall
+    jmp pin  WAIT_FALL       ; if high, wait for falling edge
+WAIT_RISE:
+    jmp pin  WAIT_FALL       ; pin went high -> wait for fall
+    jmp      WAIT_RISE       ; still low -> keep waiting for rise
+WAIT_FALL:
+    jmp pin  WAIT_FALL       ; spin while still high (falling = pin goes low)
+.wrap_target
+    in pins, 2
+.wrap
+
+.program capture_rs232_trigger_both
+    jmp pin  WAIT_FALL       ; if starting high, look for falling edge
+WAIT_RISE:
+    jmp pin  CAPTURE         ; pin went high -> rising edge
+    jmp      WAIT_RISE
+WAIT_FALL:
+    jmp pin  WAIT_FALL       ; spin while high
+CAPTURE:
+.wrap_target
+    in pins, 2
+.wrap
+
+.program capture_rs232_trigger_low_level
+WAIT_LOW:
+    jmp pin  WAIT_LOW        ; spin while pin is high
+.wrap_target
+    in pins, 2
+.wrap
+
+.program capture_rs232_trigger_high_level
+WAIT_HIGH:
+    jmp pin  CAPTURE         ; pin is high -> start capture
+    jmp      WAIT_HIGH
+CAPTURE:
+.wrap_target
+    in pins, 2
 .wrap

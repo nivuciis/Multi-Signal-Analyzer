@@ -20,7 +20,7 @@
  * @param fmt The format string
  * @param ... Additional arguments
  */
-void log_inf(char* module, const char *fmt, ...);
+void log_inf(char *module, const char *fmt, ...);
 
 /**
  * @brief Log an error message
@@ -29,7 +29,7 @@ void log_inf(char* module, const char *fmt, ...);
  * @param fmt The format string
  * @param ... Additional arguments
  */
-void log_err(char* module, const char *fmt, ...);
+void log_err(char *module, const char *fmt, ...);
 
 /**
  * @brief Log a warning message
@@ -38,7 +38,7 @@ void log_err(char* module, const char *fmt, ...);
  * @param fmt The format string
  * @param ... Additional arguments
  */
-void log_warn(char* module, const char *fmt, ...);
+void log_warn(char *module, const char *fmt, ...);
 
 /**
  * @brief Log a debug message
@@ -47,6 +47,6 @@ void log_warn(char* module, const char *fmt, ...);
  * @param fmt The format string
  * @param ... Additional arguments
  */
-void log_debug(char* module, const char *fmt, ...);
+void log_debug(char *module, const char *fmt, ...);
 
 #endif /* LOG_H */

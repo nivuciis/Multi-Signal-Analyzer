@@ -77,6 +77,39 @@ void ana_module_pio_init(struct ana_module_system *config)
 	pio_sm_set_enabled(config->pio.instance, config->pio.sm, false);
 }
 
+void ana_load_simple_program(struct ana_module_system *config)
+{
+	ana_module_pio_reload(config, config->pio.programs.simple.program,
+			      config->pio.programs.simple.get_default_cfg_func, ANA_NO_JMP_PIN);
+}
+
+void ana_apply_triggers(struct ana_module_system *config, uint16_t triggers)
+{
+	struct sigrok_trigger *trigger = ana_sigrok_get_trigger();
+	const struct ana_module_program *prog = &config->pio.programs.simple;
+	uint8_t jmp_pin = ANA_NO_JMP_PIN;
+
+	for (int i = 0; i < MAX_NUM_CHANNELS; i++) {
+		if (!(triggers & (uint16_t)(1u << i))) {
+			continue;
+		}
+
+		enum ana_trigger_type type = trigger->trigger_type[i];
+
+		if (type >= _ANA_TRIGGER_TYPE_COUNT ||
+		    config->pio.programs.trigger[type].program == NULL) {
+			break;
+		}
+
+		prog = &config->pio.programs.trigger[type];
+		/* Physical GPIO of the channels module: all modules wait on it. */
+		jmp_pin = (uint8_t)(PICO_DEFAULT_CHANNELS_PIN_BASE + i);
+		break;
+	}
+
+	ana_module_pio_reload(config, prog->program, prog->get_default_cfg_func, jmp_pin);
+}
+
 void ana_module_dma_init(struct ana_module_system *config)
 {
 	log_debug(config->module.name, "Initializing DMA...");
@@ -137,14 +170,35 @@ void ana_module_set_sample_rate(struct ana_module_system *config)
 	pio_sm_set_clkdiv(config->pio.instance, config->pio.sm, clkdiv);
 }
 
-inline static void ana_module_verify_pp_irq(struct ana_module_dma *dma, uint8_t instance)
+static void ana_module_pp_disarm_final_chain(struct ana_module_system *m)
 {
-	if (dma_channel_get_irq0_status(instance)) {
-		dma_channel_acknowledge_irq0(instance);
-		dma->pp_produced++;
-		if (dma->pp_produced - dma->pp_consumed >= 2u) {
-			dma->pp_overflow = true;
+	uint8_t final_chan = ((m->dma.pp_target - 1u) & 1u) ? m->dma.instance_b : m->dma.instance;
+	hw_write_masked(&dma_hw->ch[final_chan].al1_ctrl,
+			(uint32_t)final_chan << DMA_CH0_CTRL_TRIG_CHAIN_TO_LSB,
+			DMA_CH0_CTRL_TRIG_CHAIN_TO_BITS);
+}
+
+inline static void ana_module_verify_pp_irq(struct ana_module_system *m, uint8_t instance)
+{
+	struct ana_module_dma *dma = &m->dma;
+
+	if (!dma_channel_get_irq0_status(instance)) {
+		return;
+	}
+	dma_channel_acknowledge_irq0(instance);
+	dma->pp_produced++;
+
+	if (dma->pp_target != 0u) {
+		if (dma->pp_produced + 1u == dma->pp_target) {
+			ana_module_pp_disarm_final_chain(m);
 		}
+		if (dma->pp_produced >= dma->pp_target) {
+			pio_sm_set_enabled(m->pio.instance, m->pio.sm, false);
+			return;
+		}
+	}
+	if (dma->pp_produced - dma->pp_consumed >= 2u) {
+		dma->pp_overflow = true;
 	}
 }
 
@@ -157,8 +211,8 @@ static void ana_module_pp_irq(void)
 	for (int i = 0; i < pp_module_count; i++) {
 		struct ana_module_system *m = pp_modules[i];
 
-		ana_module_verify_pp_irq(&m->dma, m->dma.instance);
-		ana_module_verify_pp_irq(&m->dma, m->dma.instance_b);
+		ana_module_verify_pp_irq(m, m->dma.instance);
+		ana_module_verify_pp_irq(m, m->dma.instance_b);
 	}
 }
 
@@ -168,6 +222,7 @@ void ana_module_pingpong_init(struct ana_module_system *config, uint16_t *buf_a,
 	config->dma.buf_a = buf_a;
 	config->dma.buf_b = buf_b;
 	config->dma.pp_chunk = chunk;
+	config->dma.pp_target = 0;
 
 	if (pp_module_count >= ANA_PP_MAX_MODULES) {
 		log_err(config->module.name, "Too many ping-pong modules");
@@ -208,8 +263,12 @@ void ana_module_pingpong_start(struct ana_module_system *config)
 	config->dma.pp_consumed = 0;
 	config->dma.pp_overflow = false;
 
-	ana_module_pp_configure(config, config->dma.instance, config->dma.instance_b,
-				config->dma.buf_a);
+	/* Single-buffer capture: channel A must not chain at all — B would
+	 * eventually chain back and overwrite buffer A mid-send. */
+	uint8_t chain_a =
+		(config->dma.pp_target == 1u) ? config->dma.instance : config->dma.instance_b;
+
+	ana_module_pp_configure(config, config->dma.instance, chain_a, config->dma.buf_a);
 	ana_module_pp_configure(config, config->dma.instance_b, config->dma.instance,
 				config->dma.buf_b);
 
@@ -231,9 +290,20 @@ void ana_module_pingpong_start(struct ana_module_system *config)
 
 void ana_module_pingpong_stop(struct ana_module_system *config)
 {
+	config->dma.pp_target = 0;
 	pio_sm_set_enabled(config->pio.instance, config->pio.sm, false);
 	dma_channel_set_irq0_enabled(config->dma.instance, false);
 	dma_channel_set_irq0_enabled(config->dma.instance_b, false);
+
+	/* @note: Errata RP2350-E5: clear the enable bit of the aborted channel and any
+	 * chained channel BEFORE calling dma_channel_abort(), or the abort can
+	 * spuriously re-trigger the chained partner. Both ping-pong channels are chained to each
+	 * other, so clear both before aborting either.
+	 */
+	hw_write_masked(&dma_hw->ch[config->dma.instance].al1_ctrl, 0u, DMA_CH0_CTRL_TRIG_EN_BITS);
+	hw_write_masked(&dma_hw->ch[config->dma.instance_b].al1_ctrl, 0u,
+			DMA_CH0_CTRL_TRIG_EN_BITS);
+
 	dma_channel_abort(config->dma.instance);
 	dma_channel_abort(config->dma.instance_b);
 }

@@ -41,16 +41,25 @@
  *
  */
 enum SIGROK_PROTOCOL_COMMANDS {
-	SIGROK_CMD_IDENTIFY = 'i',            /**< 'i' — Identity query. Responds with "SRPICO,AxxyDzz,02". */
-	SIGROK_CMD_SET_SAMPLE_RATE = 'R',     /**< 'R<hz>' — Set sample rate in Hz. Range: 5000–120000000. */
-	SIGROK_CMD_SET_SAMPLE_LIMIT = 'L',    /**< 'L<n>' — Set number of samples to capture (fixed mode). */
-	SIGROK_CMD_GET_ANALOG_SCALE = 'a',    /**< 'a<ch>' — Query analog scale for channel ch (0–2). */
-	SIGROK_CMD_SET_ANALOG_CHANNEL = 'A',  /**< 'A<en><ch>' — Enable (en=1) or disable (en=0) analog channel ch. */
-	SIGROK_CMD_SET_DIGITAL_CHANNEL = 'D', /**< 'D<en><ch>' — Enable (en=1) or disable (en=0) digital channel ch (0-based). */
-	SIGROK_CMD_FIXED_CAPTURE = 'F',       /**< 'F' — Fixed capture. No ACK; data + "$<n>+" terminates. */
-	SIGROK_CMD_CONTINUOUS_CAPTURE = 'C',  /**< 'C' — Continuous capture (SW-triggered by driver). No ACK. */
-	SIGROK_CMD_SET_PRETRIGGER = 'p',      /**< 'p<n>' — Pretrigger buffer depth hint. ACK with '*'. */
-	SIGROK_CMD_SET_TRIGGER = 't',         /**< 't<type><idx>' — HW trigger. type: 0=low,1=high,2=rise,3=fall,4=edge. idx = ch+2. */
+	SIGROK_CMD_IDENTIFY = 'i', /**< 'i' — Identity query. Responds with "SRPICO,AxxyDzz,02". */
+	SIGROK_CMD_SET_SAMPLE_RATE =
+		'R', /**< 'R<hz>' — Set sample rate in Hz. Range: 5000–120000000. */
+	SIGROK_CMD_SET_SAMPLE_LIMIT =
+		'L', /**< 'L<n>' — Set number of samples to capture (fixed mode). */
+	SIGROK_CMD_GET_ANALOG_SCALE =
+		'a', /**< 'a<ch>' — Query analog scale for channel ch (0–2). */
+	SIGROK_CMD_SET_ANALOG_CHANNEL =
+		'A', /**< 'A<en><ch>' — Enable (en=1) or disable (en=0) analog channel ch. */
+	SIGROK_CMD_SET_DIGITAL_CHANNEL = 'D', /**< 'D<en><ch>' — Enable (en=1) or disable (en=0)
+						 digital channel ch (0-based). */
+	SIGROK_CMD_FIXED_CAPTURE =
+		'F', /**< 'F' — Fixed capture. No ACK; data + "$<n>+" terminates. */
+	SIGROK_CMD_CONTINUOUS_CAPTURE =
+		'C', /**< 'C' — Continuous capture (SW-triggered by driver). No ACK. */
+	SIGROK_CMD_SET_PRETRIGGER =
+		'p',                  /**< 'p<n>' — Pretrigger buffer depth hint. ACK with '*'. */
+	SIGROK_CMD_SET_TRIGGER = 't', /**< 't<type><idx>' — HW trigger. type:
+					 0=low,1=high,2=rise,3=fall,4=edge. idx = ch+2. */
 };
 
 /**
@@ -72,11 +81,12 @@ enum ANA_SYSTEM_STATUS {
  *
  */
 enum ana_trigger_type {
-	ANA_TRIGGER_EDGE_RISE,  /**< Rising edge trigger */
-	ANA_TRIGGER_EDGE_FALL,  /**< Falling edge trigger */
-	ANA_TRIGGER_EDGE_BOTH,  /**< Both edges trigger */
-	ANA_TRIGGER_LEVEL_LOW,  /**< Low level trigger */
-	ANA_TRIGGER_LEVEL_HIGH, /**< High level trigger */
+	ANA_TRIGGER_EDGE_RISE,   /**< Rising edge trigger */
+	ANA_TRIGGER_EDGE_FALL,   /**< Falling edge trigger */
+	ANA_TRIGGER_EDGE_BOTH,   /**< Both edges trigger */
+	ANA_TRIGGER_LEVEL_LOW,   /**< Low level trigger */
+	ANA_TRIGGER_LEVEL_HIGH,  /**< High level trigger */
+	_ANA_TRIGGER_TYPE_COUNT, /**< Number of trigger types (not a trigger) */
 };
 
 /**

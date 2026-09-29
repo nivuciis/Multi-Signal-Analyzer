@@ -1,11 +1,11 @@
 build
 /.vscode/
 
-*md
-__pycahe__/
+__pycache__/
 *.pyc
 *.pyo
 .cache/
 *.egg-info/
 dist/
 build/
+benchmarks/results/

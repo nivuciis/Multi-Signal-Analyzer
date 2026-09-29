@@ -1,0 +1,6 @@
+# pyserial: required by all scripts (m1..m4, via tools/debug_firmware.py)
+pyserial>=3.5
+# numpy/scipy: only required by stats.py / compare.py (Cap.3, "Análise
+# estatística") — not needed just to collect data with m1..m4.
+numpy>=1.24
+scipy>=1.10

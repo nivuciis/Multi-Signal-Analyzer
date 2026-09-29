@@ -74,4 +74,10 @@ void handle_set_pretrigger(void);
  */
 void handle_set_trigger(void);
 
+/**
+ * @brief Handles the CPU occupancy query (last completed capture)
+ *
+ */
+void handle_get_cpu_occupancy(void);
+
 #endif /* HANDLES_H */

@@ -30,6 +30,7 @@
 
 #include "board_def.h"
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #define MAX_NUM_CHANNELS                                                                           \
@@ -51,6 +52,7 @@ enum SIGROK_PROTOCOL_COMMANDS {
 	SIGROK_CMD_CONTINUOUS_CAPTURE = 'C',  /**< 'C' — Continuous capture (SW-triggered by driver). No ACK. */
 	SIGROK_CMD_SET_PRETRIGGER = 'p',      /**< 'p<n>' — Pretrigger buffer depth hint. ACK with '*'. */
 	SIGROK_CMD_SET_TRIGGER = 't',         /**< 't<type><idx>' — HW trigger. type: 0=low,1=high,2=rise,3=fall,4=edge. idx = ch+2. */
+	SIGROK_CMD_GET_CPU_OCCUPANCY = 'o',   /**< 'o' — Query "<busy_cycles>/<total_cycles>" (DWT) for the last capture. Not part of the upstream sigrok-pico protocol; used by benchmarks/m4_cpu_occupancy.py. */
 };
 
 /**
@@ -121,5 +123,20 @@ struct pulseview_sample_config *ana_sigrok_get_sample_config(void);
  * @return struct sigrok_trigger* Pointer to the trigger configuration
  */
 struct sigrok_trigger *ana_sigrok_get_trigger(void);
+
+#ifdef ANA_DUALCORE_SAMPLING
+/**
+ * @brief Core-0 side of the dual-core sampling variant (Cap.3, Firmware B).
+ *
+ * Call every iteration of core 0's main loop. When a dual-core capture is
+ * active (channels-only, continuous, no trigger/analog/RS232/RS485), drains
+ * one chunk of samples from the sampling ring, RLE-encodes it and sends it
+ * over USB — the work the thesis assigns to "core 0" while core 1 is
+ * exclusively sampling. A no-op otherwise.
+ *
+ * @return true if a chunk was drained and processed, false if idle.
+ */
+bool ana_sigrok_dualcore_service(void);
+#endif /* ANA_DUALCORE_SAMPLING */
 
 #endif /* SIGROK_HANDLER_H */

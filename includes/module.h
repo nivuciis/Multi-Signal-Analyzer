@@ -155,4 +155,59 @@ void ana_module_set_trigger(struct ana_module_system *config, uint8_t gpio,
  */
 void ana_module_clear_trigger(struct ana_module_system *config);
 
+/**
+ * @brief Size, in samples, of the ring buffer used by the dual-core sampling
+ * variant. Must be a power of two.
+ */
+#define ANA_DUALCORE_RING_SIZE 8192u
+
+/**
+ * @brief Single-producer/single-consumer ring buffer for the dual-core
+ * sampling variant: core 1 (producer) writes samples via
+ * ana_module_dualcore_sample_run(); core 0 (consumer) drains them via
+ * ana_module_ring_pop(). No locks: synchronization is through the
+ * monotonically increasing write_idx/read_idx alone.
+ */
+struct ana_module_ring {
+	uint16_t *buffer;          /**< Backing storage, ANA_DUALCORE_RING_SIZE entries */
+	uint32_t mask;             /**< buffer size - 1 (power-of-two sizing) */
+	volatile uint32_t write_idx; /**< Written only by the producer (core 1) */
+	volatile uint32_t read_idx;  /**< Written only by the consumer (core 0) */
+	volatile bool overflow;      /**< Set if the producer ever caught up to the consumer */
+};
+
+/**
+ * @brief Initialize a dual-core sampling ring buffer.
+ *
+ * @param ring   Ring to initialize
+ * @param buffer Backing storage, must hold `size` entries
+ * @param size   Capacity in samples; must be a power of two
+ */
+void ana_module_ring_init(struct ana_module_ring *ring, uint16_t *buffer, uint32_t size);
+
+/**
+ * @brief Pop up to `max` samples from the ring into `out` (consumer side).
+ *
+ * @return Number of samples actually popped (0 if the ring was empty).
+ */
+uint32_t ana_module_ring_pop(struct ana_module_ring *ring, uint16_t *out, uint32_t max);
+
+/**
+ * @brief Dual-core sampling variant (Cap.3, Firmware B, "variante adicional").
+ *
+ * Runs exclusively on the calling core (intended to be core 1): samples only
+ * `config`'s GPIO channels into `ring`, with no RLE encoding, USB traffic or
+ * other module's ADC/trigger servicing in this loop, until the host
+ * disconnects or requests an abort. The consumer (core 0, via
+ * ana_module_ring_pop()) is expected to drain the ring concurrently.
+ *
+ * If `config->trigger.enabled`, the trigger condition is awaited first (also
+ * on this core, before samples are produced).
+ *
+ * @param config Module to sample (only its own trigger/rate config is used)
+ * @param ring   Destination ring, already initialized
+ */
+void ana_module_dualcore_sample_run(struct ana_module_system *config,
+				     struct ana_module_ring *ring);
+
 #endif /* MODULE_H */

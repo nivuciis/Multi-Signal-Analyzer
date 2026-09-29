@@ -21,11 +21,18 @@
 #include "handles/handles_internal.h"
 #include "led.h"
 #include "log.h"
+#include "module.h"
+#include "occupancy.h"
 #include "rs232.h"
 #include "rs485.h"
 #include "usb_util.h"
 
 #include <stdio.h>
+
+#ifdef ANA_DUALCORE_SAMPLING
+#include <hardware/sync.h>
+#include <pico/platform.h>
+#endif
 
 #define CAPTURE_CHUNK_SIZE 1024U
 
@@ -33,6 +40,22 @@
 #define DIGITAL_MASK_CHANNELS 0x0FFFu     /* channels 0-11  */
 #define DIGITAL_MASK_RS485    (1u << 12)  /* channel 12     */
 #define DIGITAL_MASK_RS232    (3u << 13)  /* channels 13-14 */
+
+#ifdef ANA_DUALCORE_SAMPLING
+/* Samples drained from the ring per ana_sigrok_dualcore_service() call. */
+#define DUALCORE_DRAIN_CHUNK 256u
+
+static uint16_t dualcore_ring_storage[ANA_DUALCORE_RING_SIZE];
+static struct ana_module_ring dualcore_ring;
+/* RS485/RS232 channels are inactive whenever the dual-core path is taken
+ * (see run_capture()'s gating condition), so their contribution to the
+ * merged digital word is always zero; a constant zero buffer stands in for
+ * their per-sample data without touching those modules from this core. */
+static const uint16_t dualcore_zero_aux[DUALCORE_DRAIN_CHUNK];
+static volatile bool dualcore_capture_active;
+static volatile bool dualcore_producer_done;
+static volatile uint32_t dualcore_bytes_sent;
+#endif
 
 
 static struct sigrok_handler self = {
@@ -443,6 +466,97 @@ static bool capture_chunks(struct ana_module_system *config, uint32_t n_samples,
 	return !adc_overflow;
 }
 
+#ifdef ANA_DUALCORE_SAMPLING
+/**
+ * @brief Dual-core sampling variant of a continuous capture.
+ *
+ * Runs entirely on this core (core 1): starts the ring, launches the
+ * exclusive sampling loop (ana_module_dualcore_sample_run(), blocking until
+ * abort/disconnect), then waits for core 0 (ana_sigrok_dualcore_service())
+ * to drain and RLE-encode every sample still in the ring before reporting
+ * completion. This core never calls ana_module_ring_pop()/
+ * ana_send_packet_channels() itself once the ring is live — only core 0
+ * does, for the whole capture including the tail end — so there is exactly
+ * one consumer at all times.
+ */
+static void run_capture_dualcore(struct ana_module_system *config)
+{
+	ana_channels_apply_trigger();
+	ana_module_set_sample_rate(config);
+
+	ana_module_ring_init(&dualcore_ring, dualcore_ring_storage, ANA_DUALCORE_RING_SIZE);
+	dualcore_bytes_sent = 0;
+	dualcore_producer_done = false;
+	__dmb();
+	dualcore_capture_active = true;
+	__dmb();
+
+	ana_module_dualcore_sample_run(config, &dualcore_ring);
+
+	__dmb();
+	dualcore_producer_done = true;
+	__dmb();
+
+	/* Core 0 clears dualcore_capture_active once it has drained the ring
+	 * empty past this point; wait for that so the marker below accounts
+	 * for every sample actually sent. */
+	while (dualcore_capture_active) {
+		tight_loop_contents();
+	}
+
+	if (dualcore_ring.overflow) {
+		log_warn("sigrok", "Dual-core sampling ring overflow");
+	}
+
+	if (ana_usb_abort_requested()) {
+		log_inf("sigrok", "Capture aborted by host");
+		return;
+	}
+
+	if (!ana_usb_is_connected()) {
+		ana_usb_write((const uint8_t *)"!!!$0+", 6U);
+		log_warn("sigrok", "Capture aborted: host disconnected");
+		return;
+	}
+
+	char done_marker[32];
+
+	__dmb();
+	snprintf(done_marker, sizeof(done_marker), "$%lu+", (unsigned long)dualcore_bytes_sent);
+	ana_usb_write((const uint8_t *)done_marker, strlen(done_marker));
+}
+
+bool ana_sigrok_dualcore_service(void)
+{
+	__dmb();
+	if (!dualcore_capture_active) {
+		return false;
+	}
+
+	uint16_t chunk[DUALCORE_DRAIN_CHUNK];
+	uint32_t n = ana_module_ring_pop(&dualcore_ring, chunk, DUALCORE_DRAIN_CHUNK);
+
+	if (n > 0) {
+		uint32_t bytes_out = 0;
+
+		if (ana_send_packet_channels(chunk, dualcore_zero_aux, dualcore_zero_aux, n,
+					     &bytes_out)) {
+			dualcore_bytes_sent += bytes_out;
+		}
+		return true;
+	}
+
+	__dmb();
+	if (dualcore_producer_done) {
+		__dmb();
+		dualcore_capture_active = false;
+		__dmb();
+	}
+
+	return false;
+}
+#endif /* ANA_DUALCORE_SAMPLING */
+
 void run_capture(bool continuous)
 {
 	struct ana_module_system *config = ana_channels_get_module();
@@ -453,7 +567,28 @@ void run_capture(bool continuous)
 		ana_adc_set_rate(self.cfg.sample_rate_hz * (uint32_t)self.tx.active_analog_ch);
 	}
 
+#ifdef ANA_DUALCORE_SAMPLING
+	/* Dual-core variant: only for a channels-only continuous capture, no
+	 * trigger, no analog, no RS232/RS485 (Cap.3, Firmware B). Mirrors the
+	 * scope Firmware A restricts its own hardware ping-pong DMA to. */
+	if (continuous && self.trigger_config.trigger_mask == 0 &&
+	    self.tx.active_analog_ch == 0 && !module_active(DIGITAL_MASK_RS485) &&
+	    !module_active(DIGITAL_MASK_RS232)) {
+		ana_led_set_status(LED_STATUS_CAPTURING);
+		run_capture_dualcore(config);
+		ana_led_set_status(LED_STATUS_CONNECTED);
+		return;
+	}
+#endif
+
 	ana_led_set_status(LED_STATUS_CAPTURING);
+
+	/* Firmware B (Cap.3, M4): the whole capture — sampling, RLE and USB
+	 * TX — runs on this CPU with no hardware to offload to, so the whole
+	 * body counts as "busy" (contrast with Firmware A, which brackets
+	 * only its RLE+TX regions). */
+	ana_occupancy_capture_start();
+	ana_occupancy_busy_enter();
 
 	do {
 		uint32_t total_sent = 0;
@@ -516,6 +651,9 @@ void run_capture(bool continuous)
 
 	} while (continuous && ana_usb_is_connected());
 
+	ana_occupancy_busy_exit();
+	ana_occupancy_capture_end();
+
 	ana_led_set_status(LED_STATUS_CONNECTED);
 }
 
@@ -534,7 +672,8 @@ static const sigrok_command_t sigrok_commands[] = {
 	{SIGROK_CMD_FIXED_CAPTURE, handle_fixed_capture},
 	{SIGROK_CMD_CONTINUOUS_CAPTURE, handle_continuous_capture},
 	{SIGROK_CMD_SET_PRETRIGGER, handle_set_pretrigger},
-	{SIGROK_CMD_SET_TRIGGER, handle_set_trigger}};
+	{SIGROK_CMD_SET_TRIGGER, handle_set_trigger},
+	{SIGROK_CMD_GET_CPU_OCCUPANCY, handle_get_cpu_occupancy}};
 
 #define SIGROK_COMMAND_COUNT (sizeof(sigrok_commands) / sizeof(sigrok_commands[0]))
 

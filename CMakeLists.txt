@@ -26,6 +26,12 @@ endif()
 set(PICO_BOARD_HEADER_DIRS ${CMAKE_CURRENT_LIST_DIR}/boards)
 set(PICO_BOARD edge_logic_analyzer CACHE STRING "Board type")
 
+# Dual-core sampling variant (Cap.3, Firmware B: "variante adicional" using
+# both RP2350 cores). Off by default (single-core CPU sampler, the baseline
+# compared against Firmware A); build with -DANA_DUALCORE_SAMPLING=ON to get
+# the alternate binary used for the M2 single-core vs. dual-core comparison.
+option(ANA_DUALCORE_SAMPLING "Build the dual-core (core0=RLE/USB, core1=sampling) variant" OFF)
+
 # Pull in Raspberry Pi Pico SDK (must be before project)
 include(pico_sdk_import.cmake)
 
@@ -53,7 +59,11 @@ include_directories(multi_signal_analyzer
         )
 
 pico_set_program_name(multi_signal_analyzer "multi_signal_analyzer")
-pico_set_program_version(multi_signal_analyzer "1.0")   
+pico_set_program_version(multi_signal_analyzer "1.0")
+
+if(ANA_DUALCORE_SAMPLING)
+    target_compile_definitions(multi_signal_analyzer PRIVATE ANA_DUALCORE_SAMPLING)
+endif()
 
 # Modify the below lines to enable/disable output over UART/USB
 pico_enable_stdio_uart(multi_signal_analyzer 0)

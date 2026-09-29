@@ -131,6 +131,13 @@ int main(void)
 
 		/* TX ring → CDC (Core 1 produced, we send) */
 		ana_usb_tx_drain();
+
+#ifdef ANA_DUALCORE_SAMPLING
+		/* Dual-core sampling variant (Cap.3, Firmware B): while active,
+		 * core 1 is exclusively sampling and this core also drains its
+		 * ring, RLE-encodes and sends the data. No-op otherwise. */
+		ana_sigrok_dualcore_service();
+#endif
 	}
 
 	return 0;
